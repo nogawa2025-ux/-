@@ -18,6 +18,38 @@
 <div id="root"><div id="loading">読み込み中…（初回はCDNの読み込みに数秒かかります）</div></div>
 
 <script>
+  window.onerror = function (msg, url, line, col, error) {
+    var root = document.getElementById("root");
+    if (root) {
+      root.innerHTML =
+        '<div style="color:#fca5a5;background:#1a0505;padding:20px;font-family:monospace;white-space:pre-wrap;font-size:14px;line-height:1.6;">' +
+        '⚠ エラーが発生しました\n\n' +
+        'メッセージ: ' + msg + '\n' +
+        '行番号: ' + line + ' 列: ' + col + '\n\n' +
+        'このエラー内容をスクリーンショットで送ってください。' +
+        '</div>';
+    }
+    return false;
+  };
+  window.addEventListener("unhandledrejection", function (event) {
+    var root = document.getElementById("root");
+    if (root) {
+      root.innerHTML =
+        '<div style="color:#fca5a5;background:#1a0505;padding:20px;font-family:monospace;white-space:pre-wrap;font-size:14px;">' +
+        '⚠ 非同期エラー: ' + (event.reason && event.reason.message ? event.reason.message : String(event.reason)) +
+        '</div>';
+    }
+  });
+  setTimeout(function () {
+    var loading = document.getElementById("loading");
+    if (loading) {
+      loading.innerHTML =
+        "読み込みに時間がかかっています…（20秒経過）<br/>このままエラー表示に切り替わらない場合は、通信環境の問題の可能性があります。Wi-Fiに接続してから再読み込みしてみてください。";
+    }
+  }, 20000);
+</script>
+
+<script>
   // ---------------------------------------------------------------
   // window.storage ポリフィル：Claudeアーティファクト専用のAPIを
   // 通常ブラウザのlocalStorageで再現する（このファイルは通常のSafari/Chromeで
