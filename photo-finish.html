@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>写真判定チャレンジ</title>
+<style>
+  :root {
+    --bg: #022c22;
+    --panel: #064e3b;
+    --panel-2: #065f46;
+    --text: #ecfdf5;
+    --muted: #a7f3d0;
+    --accent: #fbbf24;
+    --ok: #4ade80;
+    --ng: #f87171;
+    --line: #10b981;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.5rem; margin: 4px 0 12px; color: var(--accent); letter-spacing: 0.05em; }
+  h2 { font-size: 1.1rem; margin: 0 0 8px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .muted { color: var(--muted); font-size: 0.9rem; }
+  .hidden { display: none !important; }
+  table.rule { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+  table.rule th, table.rule td { border-bottom: 1px solid rgba(16, 185, 129, 0.4); padding: 4px 8px; text-align: left; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button {
+    font: inherit; color: var(--text); background: var(--panel-2);
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px; cursor: pointer;
+    min-height: 44px;
+  }
+  button:hover:not(:disabled) { filter: brightness(1.15); }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button.sel { background: var(--accent); color: #1c1917; border-color: var(--accent); font-weight: bold; }
+  button.primary { background: var(--accent); color: #1c1917; border-color: var(--accent); font-weight: bold; padding: 10px 24px; }
+  button.correct { outline: 3px solid var(--ok); outline-offset: 1px; }
+  .cap { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 1px solid #000; vertical-align: -2px; margin-right: 6px; }
+  .status { display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 8px; }
+  .canvas-box { position: relative; border-radius: 8px; overflow: hidden; border: 2px solid #000; background: #000; }
+  canvas#photo { display: block; width: 100%; height: auto; touch-action: none; cursor: crosshair; }
+  .label { font-weight: bold; margin: 12px 0 6px; }
+  .result { margin-top: 12px; padding: 12px; border-radius: 8px; background: rgba(0,0,0,0.25); }
+  .result .big { font-size: 1.2rem; font-weight: bold; }
+  .ok { color: var(--ok); } .ng { color: var(--ng); }
+  .score-big { font-size: 2.5rem; font-weight: bold; color: var(--accent); }
+  label.opt { display: inline-flex; align-items: center; gap: 6px; margin-right: 16px; min-height: 36px; }
+  ol.history { padding-left: 1.4em; margin: 8px 0 0; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📸 写真判定チャレンジ</h1>
+
+  <!-- スタート画面 -->
+  <section id="screen-start">
+    <div class="panel">
+      <h2>遊び方</h2>
+      <p>ゴール板を通過した瞬間の写真判定画像を見て、<b>1着の馬</b>と<b>1着と2着の着差</b>を当ててください。全10問です。</p>
+      <p class="muted">画像をなぞる（スマホは指でタッチ）と拡大鏡が出ます。縦の細い線（目盛り）は0.05馬身ごとに引かれています。</p>
+      <h2 style="margin-top:12px;">このゲームの着差の基準</h2>
+      <table class="rule" id="rule-table"></table>
+      <p class="muted">※実際の競馬の着差は審判が判定するもので、ハナ・アタマ・クビの距離には決まった値がありません。このゲームでは1馬身≒2.4mとし、上の表の範囲で出題します。</p>
+      <h2 style="margin-top:12px;">得点</h2>
+      <p class="muted" style="margin-top:0;">1着正解 +1点、着差正解 +2点（1問最大3点）。同着の問題は「同着」を選べば3点です。</p>
+    </div>
+    <div class="panel">
+      <h2>設定</h2>
+      <div>
+        <label class="opt"><input type="radio" name="mode" value="2" checked /> 初級（2頭）</label>
+        <label class="opt"><input type="radio" name="mode" value="3" /> 上級（3頭）</label>
+      </div>
+      <div>
+        <label class="opt"><input type="checkbox" id="opt-grid" checked /> 目盛り線を表示</label>
+      </div>
+      <p class="muted" id="best"></p>
+      <button class="primary" id="btn-start">スタート</button>
+    </div>
+  </section>
+
+  <!-- ゲーム画面 -->
+  <section id="screen-game" class="hidden">
+    <div class="status"><span id="q-no"></span><span id="q-score"></span></div>
+    <div class="canvas-box"><canvas id="photo" width="1000" height="520"></canvas></div>
+    <p class="muted" style="margin:6px 0 0;">画像をなぞると拡大鏡が出ます。</p>
+
+    <div class="label">1着は？</div>
+    <div class="row" id="winner-btns"></div>
+    <div class="label">着差は？</div>
+    <div class="row" id="margin-btns"></div>
+
+    <div class="row" style="margin-top:16px;">
+      <button class="primary" id="btn-judge" disabled>判定！</button>
+      <button class="primary hidden" id="btn-next">次の問題へ</button>
+    </div>
+    <div class="result hidden" id="result"></div>
+  </section>
+
+  <!-- 結果画面 -->
+  <section id="screen-end" class="hidden">
+    <div class="panel" style="text-align:center;">
+      <div class="muted">あなたの得点</div>
+      <div class="score-big" id="end-score"></div>
+      <div style="font-size:1.2rem;font-weight:bold;" id="end-title"></div>
+      <div class="muted" id="end-best"></div>
+    </div>
+    <div class="panel">
+      <h2>各問の結果</h2>
+      <ol class="history" id="history"></ol>
+    </div>
+    <div class="row">
+      <button class="primary" id="btn-retry">もう一度遊ぶ</button>
+      <button id="btn-top">タイトルへ</button>
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------------------------------------------------------------
+  // 定数
+  // ---------------------------------------------------------------
+  const W = 1000, H = 520;
+  const L = 260;               // 1馬身のピクセル数（鼻先〜尻までの長さを100単位で描画）
+  const METERS_PER_LENGTH = 2.4;
+  const QUESTIONS = 10;
+  const GRID_STEP = 0.05;      // 目盛り線の間隔（馬身）
+
+  // 着差カテゴリ（このゲーム独自の基準）。範囲の間にすき間を空けて正解が曖昧にならないようにしている
+  const CATS = [
+    { id: "dead",  label: "同着",    min: 0,     max: 0,    w: 0.6 },
+    { id: "hana",  label: "ハナ",    min: 0.015, max: 0.06, w: 2.0 },
+    { id: "atama", label: "アタマ",  min: 0.08,  max: 0.14, w: 2.0 },
+    { id: "kubi",  label: "クビ",    min: 0.2,   max: 0.3,  w: 2.0 },
+    { id: "half",  label: "1/2馬身", min: 0.42,  max: 0.58, w: 1.2 },
+    { id: "3q",    label: "3/4馬身", min: 0.68,  max: 0.82, w: 1.0 },
+    { id: "one",   label: "1馬身",   min: 0.92,  max: 1.08, w: 0.8 },
+  ];
+
+  // 枠色（帽子の色）: 1白 2黒 3赤 4青 5黄 6緑 7橙 8桃
+  const WAKU_COLORS = ["#f8fafc", "#111827", "#dc2626", "#2563eb", "#facc15", "#16a34a", "#f97316", "#f472b6"];
+  const COATS = [
+    { body: "#8a4b24", mane: "#5e2f12" }, // 栗毛
+    { body: "#5a3218", mane: "#1f130b" }, // 鹿毛
+    { body: "#2b1a10", mane: "#120a05" }, // 黒鹿毛
+    { body: "#9a948c", mane: "#5f5a54" }, // 芦毛
+  ];
+  const SILKS = ["#dc2626", "#2563eb", "#facc15", "#16a34a", "#7c3aed", "#f97316", "#0ea5e9", "#f8fafc", "#111827", "#db2777"];
+
+  // ---------------------------------------------------------------
+  // 乱数
+  // ---------------------------------------------------------------
+  function mulberry32(seed) {
+    return function () {
+      seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const rand = Math.random;
+  const between = (r, a, b) => a + r() * (b - a);
+  const pick = (r, arr) => arr[Math.floor(r() * arr.length)];
+  function shuffle(r, arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(r() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+  function pickWeighted(r, items) {
+    const total = items.reduce((s, it) => s + it.w, 0);
+    let x = r() * total;
+    for (const it of items) { if ((x -= it.w) < 0) return it; }
+    return items[items.length - 1];
+  }
+
+  // ---------------------------------------------------------------
+  // 出題データ生成
+  // ---------------------------------------------------------------
+  function makeQuestion(horseCount) {
+    const cat = pickWeighted(rand, CATS);
+    const margin = cat.id === "dead" ? 0 : between(rand, cat.min, cat.max);
+
+    // 出走頭数16頭想定で馬番を選び、枠番は馬番から算出
+    const nums = shuffle(rand, Array.from({ length: 16 }, (_, i) => i + 1)).slice(0, horseCount).sort((a, b) => a - b);
+    const finishX = between(rand, 660, 800);
+
+    // 着順（behind = 1着からの差、馬身）
+    const behinds = [0, margin];
+    if (horseCount === 3) behinds.push(margin + between(rand, 0.3, 1.0));
+    const order = shuffle(rand, nums); // order[0] が1着
+
+    const laneYs = horseCount === 2 ? [330, 190] : [362, 237, 112];
+    const lanes = shuffle(rand, laneYs);
+
+    const horses = order.map((num, i) => ({
+      num,
+      waku: Math.ceil(num / 2),
+      noseX: finishX - behinds[i] * L,
+      y: lanes[i],
+      coat: pick(rand, COATS),
+      silk: pick(rand, SILKS),
+      silk2: pick(rand, SILKS),
+      lean: between(rand, -0.04, 0.04),
+    }));
+
+    return {
+      cat, margin, finishX, horses,
+      winner: order[0],
+      seed: Math.floor(rand() * 1e9),
+    };
+  }
+
+  // ---------------------------------------------------------------
+  // 描画
+  // ---------------------------------------------------------------
+  // 写真判定画像は横軸が時間なので、止まっている背景は横方向の縞模様になる
+  function drawBackground(ctx, seed) {
+    const r = mulberry32(seed);
+    // スタンド・空
+    for (let y = 0; y < 90; y += 3) {
+      const g = Math.floor(between(r, 150, 200));
+      ctx.fillStyle = `rgb(${g - 10},${g},${g + 15})`;
+      ctx.fillRect(0, y, W, 3);
+    }
+    // 外ラチ
+    ctx.fillStyle = "#e5e7eb"; ctx.fillRect(0, 90, W, 8);
+    ctx.fillStyle = "#6b7280"; ctx.fillRect(0, 98, W, 3);
+    // 芝コース
+    for (let y = 101; y < H; y += 2) {
+      const t = (y - 101) / (H - 101);
+      const g = Math.floor(between(r, 95, 125) + t * 20);
+      ctx.fillStyle = `rgb(${Math.floor(g * 0.45)},${g},${Math.floor(g * 0.35)})`;
+      ctx.fillRect(0, y, W, 2);
+    }
+    // ところどころに目立つ縞
+    for (let i = 0; i < 12; i++) {
+      const y = Math.floor(between(r, 101, H));
+      ctx.fillStyle = `rgba(255,255,255,${between(r, 0.03, 0.09)})`;
+      ctx.fillRect(0, y, W, 1);
+    }
+  }
+
+  function line(ctx, pts, width, color) {
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.lineWidth = width; ctx.strokeStyle = color;
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    ctx.stroke();
+  }
+
+  // 右向きの馬を描く。原点(0,0)が鼻先、1単位 = L/100 px
+  function drawHorse(ctx, h) {
+    const u = L / 100;
+    const shade = "rgba(0,0,0,0.35)";
+    ctx.save();
+    ctx.translate(h.noseX, h.y);
+    ctx.scale(u, u);
+    ctx.rotate(h.lean);
+
+    const body = h.coat.body, mane = h.coat.mane;
+
+    // 尻尾
+    line(ctx, [[-94, 6], [-104, 12], [-112, 28]], 5, mane);
+
+    // 奥側の脚
+    line(ctx, [[-82, 18], [-96, 34], [-106, 48]], 5, mane);
+    line(ctx, [[-36, 20], [-46, 36], [-56, 50]], 5, mane);
+
+    // 胴
+    ctx.fillStyle = body;
+    ctx.beginPath(); ctx.ellipse(-60, 11, 32, 14, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(-84, 11, 15, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(-34, 13, 14, 13, 0, 0, Math.PI * 2); ctx.fill();
+
+    // 首
+    ctx.beginPath();
+    ctx.moveTo(-42, 2);
+    ctx.quadraticCurveTo(-30, -13, -16, -17);
+    ctx.lineTo(-8, -8);
+    ctx.quadraticCurveTo(-20, 6, -26, 22);
+    ctx.closePath(); ctx.fill();
+    // たてがみ
+    line(ctx, [[-40, 0], [-30, -11], [-18, -17]], 3, mane);
+
+    // 頭（鼻先が x=0 に来るように描く）
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.moveTo(-18, -18);
+    ctx.lineTo(-16, -26);
+    ctx.lineTo(-12, -19);
+    ctx.quadraticCurveTo(-5, -14, -0.6, -3);
+    ctx.quadraticCurveTo(0.4, 0, -1.5, 1.2);
+    ctx.lineTo(-7, 2);
+    ctx.quadraticCurveTo(-14, -2, -20, -9);
+    ctx.closePath(); ctx.fill();
+    // 鼻づら（少し濃く）
+    ctx.fillStyle = shade;
+    ctx.beginPath(); ctx.ellipse(-3, -1, 3, 2.5, 0.6, 0, Math.PI * 2); ctx.fill();
+    // 目
+    ctx.fillStyle = "#000";
+    ctx.beginPath(); ctx.arc(-11, -14, 1.3, 0, Math.PI * 2); ctx.fill();
+
+    // 手前側の脚
+    line(ctx, [[-80, 20], [-70, 36], [-62, 51]], 5.5, body);
+    line(ctx, [[-30, 22], [-18, 36], [-9, 47]], 5.5, body);
+    line(ctx, [[-63, 50], [-60, 53]], 4, "#111");
+    line(ctx, [[-10, 46], [-7, 49]], 4, "#111");
+
+    // ゼッケン
+    ctx.fillStyle = "#f8fafc";
+    ctx.fillRect(-79, -1, 20, 15);
+    ctx.strokeStyle = "#94a3b8"; ctx.lineWidth = 0.6; ctx.strokeRect(-79, -1, 20, 15);
+    ctx.fillStyle = "#111";
+    ctx.font = "bold 11px sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(String(h.num), -69, 7);
+
+    // 騎手：脚・ブーツ
+    line(ctx, [[-60, -8], [-49, -1], [-53, 6]], 4, "#f8fafc");
+    line(ctx, [[-53, 5], [-51, 10]], 4, "#111");
+    // 胴（勝負服）
+    ctx.fillStyle = h.silk;
+    ctx.beginPath();
+    ctx.moveTo(-66, -9); ctx.lineTo(-41, -21); ctx.lineTo(-37, -14); ctx.lineTo(-60, -2);
+    ctx.closePath(); ctx.fill();
+    line(ctx, [[-56, -13], [-50, -6]], 3, h.silk2);
+    // 腕と手綱
+    line(ctx, [[-42, -17], [-31, -9], [-24, -10]], 3, h.silk2);
+    line(ctx, [[-24, -10], [-6, -3]], 0.8, "#111");
+    // ヘルメット（枠色の帽子）
+    ctx.fillStyle = WAKU_COLORS[h.waku - 1];
+    ctx.beginPath(); ctx.arc(-35, -25, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "#111"; ctx.lineWidth = 0.8; ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function drawGrid(ctx, finishX) {
+    ctx.save();
+    for (let k = -6; k <= 40; k++) {
+      const x = finishX - k * GRID_STEP * L;
+      if (x < 0 || x > W) continue;
+      ctx.strokeStyle = k % 10 === 0 ? "rgba(255,255,255,0.32)" : "rgba(255,255,255,0.14)";
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x + 0.5, 101); ctx.lineTo(x + 0.5, H); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawFinishLine(ctx, x) {
+    ctx.save();
+    ctx.fillStyle = "rgba(220,38,38,0.9)";
+    ctx.fillRect(x - 1, 0, 2, H);
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 16px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("ゴール", x, 20);
+    ctx.restore();
+  }
+
+  function drawAnswerOverlay(ctx, q, view) {
+    const [first, second] = q.horses;
+    ctx.save();
+    if (q.cat.id === "dead") {
+      ctx.fillStyle = "rgba(0,0,0,0.6)";
+      ctx.fillRect(q.finishX - 70, 34, 140, 34);
+      ctx.fillStyle = "#fbbf24";
+      ctx.font = "bold 22px sans-serif"; ctx.textAlign = "center";
+      ctx.fillText("同着", q.finishX, 59);
+    } else {
+      const x2 = second.noseX;
+      ctx.setLineDash([6, 4]);
+      ctx.strokeStyle = "#fbbf24"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x2, 30); ctx.lineTo(x2, H); ctx.stroke();
+      ctx.setLineDash([]);
+      // 矢印
+      const ay = 50;
+      ctx.beginPath(); ctx.moveTo(x2, ay); ctx.lineTo(q.finishX, ay); ctx.stroke();
+      const text = `${q.cat.label}（${q.margin.toFixed(2)}馬身）`;
+      ctx.font = "bold 18px sans-serif";
+      const tw = ctx.measureText(text).width;
+      const tx = Math.min(view.x + view.w - tw / 2 - 8, Math.max(view.x + tw / 2 + 8, (x2 + q.finishX) / 2));
+      ctx.fillStyle = "rgba(0,0,0,0.65)";
+      ctx.fillRect(tx - tw / 2 - 6, 60, tw + 12, 28);
+      ctx.fillStyle = "#fbbf24"; ctx.textAlign = "center";
+      ctx.fillText(text, tx, 81);
+    }
+    // 1着馬に印
+    ctx.strokeStyle = "#4ade80"; ctx.lineWidth = 3;
+    const hs = q.cat.id === "dead" ? [first, second] : [first];
+    for (const h of hs) {
+      ctx.beginPath(); ctx.arc(h.noseX, h.y - 3, 16, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // ---------------------------------------------------------------
+  // 画面と状態
+  // ---------------------------------------------------------------
+  const $ = (id) => document.getElementById(id);
+  const canvas = $("photo");
+  const ctx = canvas.getContext("2d");
+  const comp = document.createElement("canvas");
+  comp.width = W; comp.height = H;
+  const cctx = comp.getContext("2d");
+
+  const state = {
+    mode: 2, grid: true,
+    qIndex: 0, score: 0, q: null,
+    choiceWinner: null, choiceMargin: null,
+    answered: false, history: [],
+    loupe: null, // {x, y, touch}（画像全体の座標）
+    view: { x: 0, w: W }, // 表示する切り出し範囲。スマホではゴール付近だけを大きく見せる
+  };
+
+  function bestKey() { return "photoFinishBest:" + state.mode; }
+  function loadBest(mode) {
+    try { return Number(localStorage.getItem("photoFinishBest:" + mode)) || 0; } catch (e) { return 0; }
+  }
+  function saveBest(v) {
+    try { localStorage.setItem(bestKey(), String(v)); } catch (e) { /* 保存できなくても遊べる */ }
+  }
+
+  function showScreen(name) {
+    for (const s of ["start", "game", "end"]) $("screen-" + s).classList.toggle("hidden", s !== name);
+    window.scrollTo(0, 0);
+  }
+
+  function renderRuleTable() {
+    const rows = CATS.map((c) => {
+      const range = c.id === "dead" ? "差なし" :
+        `${c.min.toFixed(2)}〜${c.max.toFixed(2)}馬身（約${Math.round(c.min * METERS_PER_LENGTH * 100)}〜${Math.round(c.max * METERS_PER_LENGTH * 100)}cm）`;
+      return `<tr><th>${c.label}</th><td>${range}</td></tr>`;
+    });
+    $("rule-table").innerHTML = rows.join("");
+  }
+
+  function renderBest() {
+    $("best").textContent = `ベスト: 初級 ${loadBest(2)}点 ／ 上級 ${loadBest(3)}点（${QUESTIONS * 3}点満点）`;
+  }
+
+  function composeImage() {
+    const q = state.q;
+    drawBackground(cctx, q.seed);
+    if (state.grid) drawGrid(cctx, q.finishX);
+    // 奥の馬（y が小さい）から描く
+    const byDepth = q.horses.slice().sort((a, b) => a.y - b.y);
+    for (const h of byDepth) drawHorse(cctx, h);
+    drawFinishLine(cctx, q.finishX);
+    if (state.answered) drawAnswerOverlay(cctx, q, state.view);
+  }
+
+  function updateView() {
+    const narrow = canvas.parentElement.clientWidth < 640;
+    const w = narrow ? 560 : W;
+    const x = Math.min(W - w, Math.max(0, Math.round(state.q.finishX - w * 0.78)));
+    state.view = { x, w };
+    if (canvas.width !== w) canvas.width = w;
+  }
+
+  function render() {
+    const v = state.view;
+    ctx.drawImage(comp, v.x, 0, v.w, H, 0, 0, v.w, H);
+    const lp = state.loupe;
+    if (!lp) return;
+    const R = 95, Z = 3.5;
+    const cx = lp.x - v.x, cy = lp.touch ? Math.max(R + 4, lp.y - 140) : lp.y;
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.clip();
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(comp, lp.x - R / Z, lp.y - R / Z, (2 * R) / Z, (2 * R) / Z, cx - R, cy - R, 2 * R, 2 * R);
+    ctx.restore();
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.lineWidth = 4; ctx.strokeStyle = "#fbbf24"; ctx.stroke();
+    ctx.restore();
+  }
+
+  function toCanvasXY(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: ((clientX - rect.left) / rect.width) * state.view.w + state.view.x,
+      y: ((clientY - rect.top) / rect.height) * H,
+    };
+  }
+
+  canvas.addEventListener("pointermove", (e) => {
+    const p = toCanvasXY(e.clientX, e.clientY);
+    state.loupe = { x: p.x, y: p.y, touch: e.pointerType !== "mouse" };
+    render();
+  });
+  canvas.addEventListener("pointerdown", (e) => {
+    const p = toCanvasXY(e.clientX, e.clientY);
+    state.loupe = { x: p.x, y: p.y, touch: e.pointerType !== "mouse" };
+    render();
+  });
+  const hideLoupe = () => { state.loupe = null; render(); };
+  canvas.addEventListener("pointerleave", hideLoupe);
+  canvas.addEventListener("pointerup", (e) => { if (e.pointerType !== "mouse") hideLoupe(); });
+  canvas.addEventListener("pointercancel", hideLoupe);
+
+  function renderChoices() {
+    const q = state.q;
+    const dead = state.choiceMargin === "dead";
+    const wb = $("winner-btns");
+    wb.innerHTML = "";
+    const sorted = q.horses.slice().sort((a, b) => a.num - b.num);
+    for (const h of sorted) {
+      const b = document.createElement("button");
+      b.innerHTML = `<span class="cap" style="background:${WAKU_COLORS[h.waku - 1]}"></span>${h.num}番`;
+      b.disabled = state.answered || dead;
+      if (state.choiceWinner === h.num && !dead) b.classList.add("sel");
+      if (state.answered && q.cat.id !== "dead" && h.num === q.winner) b.classList.add("correct");
+      b.addEventListener("click", () => { state.choiceWinner = h.num; renderChoices(); });
+      wb.appendChild(b);
+    }
+    const mb = $("margin-btns");
+    mb.innerHTML = "";
+    for (const c of CATS) {
+      const b = document.createElement("button");
+      b.textContent = c.label;
+      b.disabled = state.answered;
+      if (state.choiceMargin === c.id) b.classList.add("sel");
+      if (state.answered && c.id === q.cat.id) b.classList.add("correct");
+      b.addEventListener("click", () => { state.choiceMargin = c.id; renderChoices(); });
+      mb.appendChild(b);
+    }
+    const ready = state.choiceMargin && (dead || state.choiceWinner !== null);
+    $("btn-judge").disabled = state.answered || !ready;
+  }
+
+  function renderStatus() {
+    $("q-no").textContent = `第${state.qIndex + 1}問 / ${QUESTIONS}`;
+    $("q-score").textContent = `得点 ${state.score}`;
+  }
+
+  function nextQuestion() {
+    state.q = makeQuestion(state.mode);
+    state.choiceWinner = null;
+    state.choiceMargin = null;
+    state.answered = false;
+    state.loupe = null;
+    $("result").classList.add("hidden");
+    $("btn-next").classList.add("hidden");
+    $("btn-judge").classList.remove("hidden");
+    updateView();
+    composeImage(); render();
+    renderChoices(); renderStatus();
+  }
+
+  function judge() {
+    const q = state.q;
+    let pts = 0, winnerOk = false, marginOk = false;
+    if (q.cat.id === "dead") {
+      marginOk = state.choiceMargin === "dead";
+      winnerOk = marginOk;
+      pts = marginOk ? 3 : 0;
+    } else if (state.choiceMargin !== "dead") {
+      winnerOk = state.choiceWinner === q.winner;
+      marginOk = state.choiceMargin === q.cat.id;
+      pts = (winnerOk ? 1 : 0) + (marginOk ? 2 : 0);
+    }
+    state.score += pts;
+    state.answered = true;
+
+    const cm = Math.round(q.margin * METERS_PER_LENGTH * 100);
+    const truth = q.cat.id === "dead"
+      ? `正解：<b>${q.horses[0].num}番と${q.horses[1].num}番の同着</b>`
+      : `正解：1着 <b>${q.winner}番</b> ／ 着差 <b>${q.cat.label}</b>（${q.margin.toFixed(2)}馬身 ≒ 約${cm}cm）`;
+    const mark = (ok) => ok ? '<span class="ok">○</span>' : '<span class="ng">×</span>';
+    const detail = q.cat.id === "dead"
+      ? `同着 ${mark(marginOk)}`
+      : `1着 ${mark(winnerOk)} ／ 着差 ${mark(marginOk)}`;
+    const headline = pts === 3 ? '<span class="ok">完璧！</span>' : pts > 0 ? "おしい！" : '<span class="ng">ハズレ…</span>';
+    $("result").innerHTML = `<div class="big">${headline} +${pts}点</div><div>${detail}</div><div>${truth}</div>`;
+    $("result").classList.remove("hidden");
+
+    const chosen = CATS.find((c) => c.id === state.choiceMargin).label;
+    state.history.push({
+      pts,
+      text: q.cat.id === "dead"
+        ? `同着（あなた：${chosen}）`
+        : `${q.winner}番・${q.cat.label}（あなた：${state.choiceMargin === "dead" ? "" : state.choiceWinner + "番・"}${chosen}）`,
+    });
+
+    $("btn-judge").classList.add("hidden");
+    $("btn-next").classList.remove("hidden");
+    $("btn-next").textContent = state.qIndex + 1 >= QUESTIONS ? "結果を見る" : "次の問題へ";
+    composeImage(); render();
+    renderChoices(); renderStatus();
+  }
+
+  function titleFor(score) {
+    const r = score / (QUESTIONS * 3);
+    if (r >= 0.95) return "🏆 名審判！フォトチャートの申し子";
+    if (r >= 0.8) return "🥇 熟練の決勝審判";
+    if (r >= 0.6) return "🥈 一人前の判定員";
+    if (r >= 0.4) return "🥉 見習い判定員";
+    return "🐴 まずはハナ差を見抜く練習から";
+  }
+
+  function finish() {
+    const prev = loadBest(state.mode);
+    const isBest = state.score > prev;
+    if (isBest) saveBest(state.score);
+    $("end-score").textContent = `${state.score} / ${QUESTIONS * 3}`;
+    $("end-title").textContent = titleFor(state.score);
+    $("end-best").textContent = isBest ? "ベスト更新！" : `ベスト: ${Math.max(prev, state.score)}点`;
+    $("history").innerHTML = state.history
+      .map((h) => `<li><span class="${h.pts === 3 ? "ok" : h.pts === 0 ? "ng" : ""}">+${h.pts}</span> ${h.text}</li>`)
+      .join("");
+    showScreen("end");
+  }
+
+  function startGame() {
+    state.mode = Number(document.querySelector('input[name="mode"]:checked').value);
+    state.grid = $("opt-grid").checked;
+    state.qIndex = 0;
+    state.score = 0;
+    state.history = [];
+    showScreen("game");
+    nextQuestion();
+  }
+
+  $("btn-start").addEventListener("click", startGame);
+  $("btn-judge").addEventListener("click", judge);
+  $("btn-next").addEventListener("click", () => {
+    state.qIndex++;
+    if (state.qIndex >= QUESTIONS) finish();
+    else { nextQuestion(); $("photo").scrollIntoView({ block: "nearest" }); }
+  });
+  $("btn-retry").addEventListener("click", startGame);
+  $("btn-top").addEventListener("click", () => { renderBest(); showScreen("start"); });
+
+  window.addEventListener("resize", () => {
+    if (!state.q || $("screen-game").classList.contains("hidden")) return;
+    updateView(); composeImage(); render();
+  });
+
+  renderRuleTable();
+  renderBest();
+})();
+</script>
+</body>
+</html>
