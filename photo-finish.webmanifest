@@ -1,0 +1,16 @@
+{
+  "name": "写真判定チャレンジ",
+  "short_name": "写真判定",
+  "description": "写真判定画像から1着馬と着差を当てるゲーム",
+  "start_url": "./photo-finish.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#022c22",
+  "theme_color": "#022c22",
+  "lang": "ja",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

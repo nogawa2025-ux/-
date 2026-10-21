@@ -2,8 +2,17 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>写真判定チャレンジ</title>
+<!-- ホーム画面に追加したときのアイコン・名前 -->
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+<link rel="manifest" href="photo-finish.webmanifest" />
+<meta name="theme-color" content="#022c22" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="写真判定" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <style>
   :root {
     --bg: #022c22;
@@ -23,6 +32,13 @@
     line-height: 1.6;
   }
   .wrap { max-width: 1000px; margin: 0 auto; padding: 16px; }
+  /* ホーム画面から開いたとき、ステータスバーやノッチに重ならないようにする */
+  .wrap {
+    padding-top: calc(16px + env(safe-area-inset-top));
+    padding-left: calc(16px + env(safe-area-inset-left));
+    padding-right: calc(16px + env(safe-area-inset-right));
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  }
   h1 { font-size: 1.5rem; margin: 4px 0 12px; color: var(--accent); letter-spacing: 0.05em; }
   h2 { font-size: 1.1rem; margin: 0 0 8px; }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
