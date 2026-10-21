@@ -80,6 +80,7 @@
       <h2>遊び方</h2>
       <p>ゴール板を通過した瞬間の写真判定画像を見て、<b>1着の馬</b>と<b>1着と2着の着差</b>を当ててください。全10問です。</p>
       <p class="muted">画像をなぞる（スマホは指でタッチ）と拡大鏡が出ます。縦の細い線（目盛り）は0.05馬身ごとに引かれています。</p>
+      <p class="muted"><b>リアルスピード</b>を選ぶと、静止画ではなく実際の速さ（約60km/h）で走る馬をカメラが追う映像を見て判定します。ゴール前は首の上下で鼻先が前後し、後ろの馬が追い込んでくることもあります。映像は2回まで見られ、判定後にスロー再生で答え合わせができます。</p>
       <h2 style="margin-top:12px;">このゲームの着差の基準</h2>
       <table class="rule" id="rule-table"></table>
       <p class="muted">※実際の競馬の着差は審判が判定するもので、ハナ・アタマ・クビの距離には決まった値がありません。このゲームでは1馬身≒2.4mとし、上の表の範囲で出題します。</p>
@@ -93,7 +94,11 @@
         <label class="opt"><input type="radio" name="mode" value="3" /> 上級（3頭）</label>
       </div>
       <div>
-        <label class="opt"><input type="checkbox" id="opt-grid" checked /> 目盛り線を表示</label>
+        <label class="opt"><input type="radio" name="view" value="photo" checked /> 写真判定（静止画）</label>
+        <label class="opt"><input type="radio" name="view" value="live" /> リアルスピード（動画）</label>
+      </div>
+      <div>
+        <label class="opt"><input type="checkbox" id="opt-grid" checked /> 目盛り線を表示（写真判定のみ）</label>
       </div>
       <p class="muted" id="best"></p>
       <button class="primary" id="btn-start">スタート</button>
@@ -104,7 +109,11 @@
   <section id="screen-game" class="hidden">
     <div class="status"><span id="q-no"></span><span id="q-score"></span></div>
     <div class="canvas-box"><canvas id="photo" width="1000" height="520"></canvas></div>
-    <p class="muted" style="margin:6px 0 0;">画像をなぞると拡大鏡が出ます。</p>
+    <div class="row hidden" id="play-row" style="margin-top:8px;">
+      <button class="primary" id="btn-play">▶ 再生</button>
+      <span class="muted" id="play-info"></span>
+    </div>
+    <p class="muted" style="margin:6px 0 0;" id="canvas-hint">画像をなぞると拡大鏡が出ます。</p>
 
     <div class="label">1着は？</div>
     <div class="row" id="winner-btns"></div>
@@ -149,6 +158,18 @@
   const METERS_PER_LENGTH = 2.4;
   const QUESTIONS = 10;
   const GRID_STEP = 0.05;      // 目盛り線の間隔（馬身）
+  const PX_PER_M = L / METERS_PER_LENGTH;
+
+  // リアルスピードモードの設定
+  const LIVE = {
+    tStar: 1.4,      // 1着馬の鼻先がゴールに届く時刻（秒）
+    duration: 2.2,   // 映像の長さ（秒）
+    anchor: 650,     // ゴールの瞬間にゴール線が来る画面上のx座標
+    stride: 2.3,     // 完歩の回数（回/秒）
+    bob: 0.05,       // 首の上下による鼻先の前後動（m）
+    views: 2,        // 判定前に映像を見られる回数
+    slow: 0.12,      // 答え合わせのスロー再生の速さ（等倍=1）
+  };
 
   // 着差カテゴリ（このゲーム独自の基準）。範囲の間にすき間を空けて正解が曖昧にならないようにしている
   const CATS = [
@@ -203,13 +224,13 @@
   // ---------------------------------------------------------------
   // 出題データ生成
   // ---------------------------------------------------------------
-  function makeQuestion(horseCount) {
+  function makeQuestion(horseCount, live) {
     const cat = pickWeighted(rand, CATS);
     const margin = cat.id === "dead" ? 0 : between(rand, cat.min, cat.max);
 
     // 出走頭数16頭想定で馬番を選び、枠番は馬番から算出
     const nums = shuffle(rand, Array.from({ length: 16 }, (_, i) => i + 1)).slice(0, horseCount).sort((a, b) => a - b);
-    const finishX = between(rand, 660, 800);
+    const finishX = live ? LIVE.anchor : between(rand, 660, 800);
 
     // 着順（behind = 1着からの差、馬身）
     const behinds = [0, margin];
@@ -227,13 +248,50 @@
       coat: pick(rand, COATS),
       silk: pick(rand, SILKS),
       silk2: pick(rand, SILKS),
-      lean: between(rand, -0.04, 0.04),
+      lean: live ? 0 : between(rand, -0.04, 0.04),
+      phase: rand(),
     }));
 
-    return {
-      cat, margin, finishX, horses,
+    const q = {
+      cat, margin, finishX, horses, live,
       winner: order[0],
       seed: Math.floor(rand() * 1e9),
+    };
+    if (live) setupLive(q, behinds);
+    return q;
+  }
+
+  // 各馬の速さ・首振りを決め、ゴールの瞬間（tStar）にちょうど出題どおりの着差になるよう逆算する
+  function setupLive(q, behinds) {
+    const F = 0; // ゴール位置（m）
+    const v1 = between(rand, 16.3, 17.3); // 約60km/h
+    q.horses.forEach((h, i) => {
+      h.v = i === 0 ? v1 : v1 + between(rand, -0.6, 1.4); // 後ろの馬は追い込んでくることが多い
+      h.bobPhase = rand();
+      const target = F - behinds[i] * METERS_PER_LENGTH;
+      h.p0 = target - h.v * LIVE.tStar - liveBob(h, LIVE.tStar);
+    });
+    q.vCam = q.horses.reduce((a, h) => a + h.v, 0) / q.horses.length;
+  }
+
+  function liveBob(h, t) {
+    return LIVE.bob * Math.sin(2 * Math.PI * (LIVE.stride * t + h.bobPhase));
+  }
+  function liveNose(h, t) { return h.p0 + h.v * t + liveBob(h, t); }
+  // カメラは馬群に合わせて横に流す（tStar でゴール線が anchor に来る）
+  function liveCam(q, t) { return q.vCam * (t - LIVE.tStar); }
+  function liveScreenX(q, t, worldX) { return (worldX - liveCam(q, t)) * PX_PER_M + LIVE.anchor; }
+
+  // 時刻 t の各馬の画面上の位置
+  function liveSnapshot(q, t) {
+    return {
+      ...q,
+      finishX: liveScreenX(q, t, 0),
+      horses: q.horses.map((h) => ({
+        ...h,
+        noseX: liveScreenX(q, t, liveNose(h, t)),
+        phase: (LIVE.stride * t + h.phase) % 1,
+      })),
     };
   }
 
@@ -267,6 +325,61 @@
     }
   }
 
+  // リアルスピードの背景。カメラが横に流れるので、スタンド・ラチ・芝の模様が流れていく
+  function drawLiveBackground(ctx, q, t) {
+    const r = mulberry32(q.seed);
+    const camPx = liveCam(q, t) * PX_PER_M;
+    const smear = Math.min(40, q.vCam * PX_PER_M / 60 / 2); // 1フレームで流れる量のぶれ
+
+    // 空
+    ctx.fillStyle = "#cbd5e1"; ctx.fillRect(0, 0, W, 34);
+    // スタンドの観客（遠いのでゆっくり流れる）
+    const crowd = Array.from({ length: 40 }, () => `hsl(${Math.floor(r() * 360)},${20 + Math.floor(r() * 30)}%,${35 + Math.floor(r() * 30)}%)`);
+    ctx.fillStyle = "#475569"; ctx.fillRect(0, 34, W, 56);
+    const cw = 22, off = (camPx * 0.35) % (cw * crowd.length);
+    ctx.globalAlpha = 0.35;
+    for (let s = 0; s < 3; s++) {
+      for (let i = -1; i < W / cw + 2; i++) {
+        const idx = ((i + Math.floor(off / cw)) % crowd.length + crowd.length) % crowd.length;
+        ctx.fillStyle = crowd[idx];
+        ctx.fillRect(i * cw - (off % cw) + s * smear * 0.35, 40 + (idx % 3) * 14, cw - 4, 12);
+      }
+    }
+    ctx.globalAlpha = 1;
+    // 外ラチと支柱（2mおき）
+    ctx.fillStyle = "#e5e7eb"; ctx.fillRect(0, 88, W, 8);
+    ctx.fillStyle = "#6b7280"; ctx.fillRect(0, 96, W, 5);
+    const postStep = 2 * PX_PER_M;
+    ctx.fillStyle = "rgba(226,232,240,0.5)";
+    for (let x = -((camPx % postStep) + postStep) % postStep; x < W + postStep; x += postStep) {
+      ctx.fillRect(x, 96, 6 + smear, 10);
+    }
+    // 芝（刈り目の縞が5mおき）
+    const g = ctx.createLinearGradient(0, 101, 0, H);
+    g.addColorStop(0, "#3f7d2c"); g.addColorStop(1, "#4f9a36");
+    ctx.fillStyle = g; ctx.fillRect(0, 101, W, H - 101);
+    const stripe = 5 * PX_PER_M;
+    ctx.fillStyle = "rgba(255,255,255,0.07)";
+    for (let x = -((camPx % (2 * stripe)) + 2 * stripe) % (2 * stripe); x < W + stripe; x += 2 * stripe) {
+      ctx.fillRect(x, 101, stripe, H - 101);
+    }
+  }
+
+  // ゴール板（決勝線の標識）とゴール線
+  function drawFinishPost(ctx, x) {
+    if (x < -40 || x > W + 40) return;
+    ctx.save();
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.fillRect(x - 1, 101, 2, H - 101);
+    ctx.fillStyle = "#f8fafc";
+    ctx.fillRect(x - 3, 8, 6, 92);
+    ctx.beginPath(); ctx.arc(x, 22, 15, 0, Math.PI * 2);
+    ctx.fillStyle = "#f8fafc"; ctx.fill();
+    ctx.lineWidth = 5; ctx.strokeStyle = "#dc2626"; ctx.stroke();
+    ctx.fillStyle = "#dc2626"; ctx.fillRect(x - 1.5, 9, 3, 26);
+    ctx.restore();
+  }
+
   function line(ctx, pts, width, color) {
     ctx.beginPath();
     ctx.moveTo(pts[0][0], pts[0][1]);
@@ -274,6 +387,22 @@
     ctx.lineWidth = width; ctx.strokeStyle = color;
     ctx.lineCap = "round"; ctx.lineJoin = "round";
     ctx.stroke();
+  }
+
+  // 走っている脚の形（リアルスピード用）。phase は完歩の位相（0〜1）
+  function gallopLeg(front, x, y, phase) {
+    const th = 2 * Math.PI * phase;
+    let a1, a2;
+    if (front) {
+      a1 = 0.15 + 0.6 * Math.sin(th);
+      a2 = a1 - 1.1 * Math.max(0, Math.cos(th));
+    } else {
+      a1 = -0.15 + 0.55 * Math.sin(th);
+      a2 = a1 - 0.45 + 0.35 * Math.sin(th);
+    }
+    const k = [x + 17 * Math.sin(a1), y + 17 * Math.cos(a1)];
+    const f = [k[0] + 17 * Math.sin(a2), k[1] + 17 * Math.cos(a2)];
+    return [[x, y], k, f];
   }
 
   // 右向きの馬を描く。原点(0,0)が鼻先、1単位 = L/100 px
@@ -290,9 +419,17 @@
     // 尻尾
     line(ctx, [[-94, 6], [-104, 12], [-112, 28]], 5, mane);
 
+    const running = h.v !== undefined;
+    if (running) ctx.translate(0, 1.5 * Math.sin(4 * Math.PI * h.phase)); // 走りに合わせた上下動
+
     // 奥側の脚
-    line(ctx, [[-82, 18], [-96, 34], [-106, 48]], 5, mane);
-    line(ctx, [[-36, 20], [-46, 36], [-56, 50]], 5, mane);
+    if (running) {
+      line(ctx, gallopLeg(false, -82, 18, h.phase + 0.62), 5, mane);
+      line(ctx, gallopLeg(true, -36, 20, h.phase + 0.12), 5, mane);
+    } else {
+      line(ctx, [[-82, 18], [-96, 34], [-106, 48]], 5, mane);
+      line(ctx, [[-36, 20], [-46, 36], [-56, 50]], 5, mane);
+    }
 
     // 胴
     ctx.fillStyle = body;
@@ -329,10 +466,18 @@
     ctx.beginPath(); ctx.arc(-11, -14, 1.3, 0, Math.PI * 2); ctx.fill();
 
     // 手前側の脚
-    line(ctx, [[-80, 20], [-70, 36], [-62, 51]], 5.5, body);
-    line(ctx, [[-30, 22], [-18, 36], [-9, 47]], 5.5, body);
-    line(ctx, [[-63, 50], [-60, 53]], 4, "#111");
-    line(ctx, [[-10, 46], [-7, 49]], 4, "#111");
+    if (running) {
+      for (const leg of [gallopLeg(false, -80, 20, h.phase + 0.52), gallopLeg(true, -30, 22, h.phase)]) {
+        line(ctx, leg, 5.5, body);
+        const [fx, fy] = leg[2];
+        line(ctx, [[fx - 1, fy - 1], [fx + 1, fy + 1]], 4, "#111");
+      }
+    } else {
+      line(ctx, [[-80, 20], [-70, 36], [-62, 51]], 5.5, body);
+      line(ctx, [[-30, 22], [-18, 36], [-9, 47]], 5.5, body);
+      line(ctx, [[-63, 50], [-60, 53]], 4, "#111");
+      line(ctx, [[-10, 46], [-7, 49]], 4, "#111");
+    }
 
     // ゼッケン
     ctx.fillStyle = "#f8fafc";
@@ -375,10 +520,11 @@
     ctx.restore();
   }
 
-  function drawFinishLine(ctx, x) {
+  function drawFinishLine(ctx, x, label = true) {
     ctx.save();
     ctx.fillStyle = "rgba(220,38,38,0.9)";
     ctx.fillRect(x - 1, 0, 2, H);
+    if (!label) { ctx.restore(); return; }
     ctx.fillStyle = "#fff";
     ctx.font = "bold 16px sans-serif";
     ctx.textAlign = "center";
@@ -439,11 +585,16 @@
     answered: false, history: [],
     loupe: null, // {x, y, touch}（画像全体の座標）
     view: { x: 0, w: W }, // 表示する切り出し範囲。スマホではゴール付近だけを大きく見せる
+    live: false,
+    // リアルスピード: ready（未再生）→ playing → watched（判定待ち）→ reveal（スロー）→ done（答え表示）
+    livePhase: "ready", liveT: 0, viewsUsed: 0, animId: 0,
   };
 
-  function bestKey() { return "photoFinishBest:" + state.mode; }
-  function loadBest(mode) {
-    try { return Number(localStorage.getItem("photoFinishBest:" + mode)) || 0; } catch (e) { return 0; }
+  function bestKey(mode = state.mode, live = state.live) {
+    return "photoFinishBest:" + (live ? "live:" : "") + mode;
+  }
+  function loadBest(mode, live) {
+    try { return Number(localStorage.getItem(bestKey(mode, live))) || 0; } catch (e) { return 0; }
   }
   function saveBest(v) {
     try { localStorage.setItem(bestKey(), String(v)); } catch (e) { /* 保存できなくても遊べる */ }
@@ -464,11 +615,14 @@
   }
 
   function renderBest() {
-    $("best").textContent = `ベスト: 初級 ${loadBest(2)}点 ／ 上級 ${loadBest(3)}点（${QUESTIONS * 3}点満点）`;
+    $("best").innerHTML =
+      `ベスト（${QUESTIONS * 3}点満点）<br>写真判定：初級 ${loadBest(2, false)}点 ／ 上級 ${loadBest(3, false)}点<br>` +
+      `リアルスピード：初級 ${loadBest(2, true)}点 ／ 上級 ${loadBest(3, true)}点`;
   }
 
   function composeImage() {
     const q = state.q;
+    if (q.live) { composeLive(); return; }
     drawBackground(cctx, q.seed);
     if (state.grid) drawGrid(cctx, q.finishX);
     // 奥の馬（y が小さい）から描く
@@ -476,6 +630,88 @@
     for (const h of byDepth) drawHorse(cctx, h);
     drawFinishLine(cctx, q.finishX);
     if (state.answered) drawAnswerOverlay(cctx, q, state.view);
+  }
+
+  function composeLive() {
+    const q = state.q;
+    const done = state.livePhase === "done";
+    const t = done ? LIVE.tStar : state.liveT;
+    const snap = liveSnapshot(q, t);
+    drawLiveBackground(cctx, q, t);
+    drawFinishPost(cctx, snap.finishX);
+    const byDepth = snap.horses.slice().sort((a, b) => a.y - b.y);
+    for (const h of byDepth) drawHorse(cctx, h);
+    if (done) {
+      drawFinishLine(cctx, snap.finishX, false); // ゴール板と重なるのでラベルなし
+      drawAnswerOverlay(cctx, snap, state.view);
+    }
+    const msg = state.livePhase === "ready" ? "▶ 再生すると実際の速さで映像が流れます（約2秒）"
+      : state.livePhase === "watched" ? "1着と着差を判定してください" : null;
+    if (msg) {
+      cctx.fillStyle = "rgba(0,0,0,0.6)";
+      cctx.fillRect(0, 0, W, H);
+      cctx.fillStyle = "#fbbf24";
+      cctx.font = "bold 26px sans-serif";
+      cctx.textAlign = "center";
+      cctx.fillText(msg, state.view.x + state.view.w / 2, H / 2, state.view.w - 24);
+    }
+  }
+
+  // 映像を from〜to 秒の範囲で speed 倍速で再生する
+  function playLive(from, to, speed, onEnd) {
+    const id = ++state.animId;
+    state.livePhase = state.livePhase === "reveal" ? "reveal" : "playing";
+    state.loupe = null;
+    const start = performance.now();
+    const step = (now) => {
+      if (id !== state.animId) return; // 別の問題に進んだ
+      state.liveT = Math.min(to, from + ((now - start) / 1000) * speed);
+      composeImage(); render();
+      if (state.liveT < to) requestAnimationFrame(step);
+      else onEnd();
+    };
+    requestAnimationFrame(step);
+    renderPlayRow();
+  }
+
+  function watchLive() {
+    if (state.livePhase !== "ready" && state.livePhase !== "watched") return;
+    if (state.viewsUsed >= LIVE.views) return;
+    state.viewsUsed++;
+    playLive(0, LIVE.duration, 1, () => {
+      state.livePhase = "watched";
+      composeImage(); render();
+      renderPlayRow(); renderChoices();
+    });
+  }
+
+  function revealLive() {
+    state.livePhase = "reveal";
+    playLive(LIVE.tStar - 0.45, LIVE.tStar, LIVE.slow, () => {
+      state.livePhase = "done";
+      composeImage(); render();
+      renderPlayRow();
+    });
+  }
+
+  function renderPlayRow() {
+    const live = state.q && state.q.live;
+    $("play-row").classList.toggle("hidden", !live);
+    $("canvas-hint").textContent = live
+      ? "映像は実際の速さ（約60km/h）で流れます。判定後はゴールの瞬間で止まり、拡大鏡で確認できます。"
+      : "画像をなぞると拡大鏡が出ます。";
+    if (!live) return;
+    const b = $("btn-play"), info = $("play-info");
+    const left = LIVE.views - state.viewsUsed;
+    if (state.answered) {
+      b.textContent = "🐢 スローで見直す";
+      b.disabled = state.livePhase === "reveal";
+      info.textContent = "";
+    } else {
+      b.textContent = state.viewsUsed === 0 ? "▶ 再生" : "▶ もう一度見る";
+      b.disabled = state.livePhase === "playing" || left <= 0;
+      info.textContent = `あと${left}回見られます`;
+    }
   }
 
   function updateView() {
@@ -512,17 +748,21 @@
     };
   }
 
+  const loupeAllowed = () => !state.q || !state.q.live || state.livePhase === "done";
   canvas.addEventListener("pointermove", (e) => {
+    if (!loupeAllowed()) return;
     const p = toCanvasXY(e.clientX, e.clientY);
     state.loupe = { x: p.x, y: p.y, touch: e.pointerType !== "mouse" };
     render();
   });
   canvas.addEventListener("pointerdown", (e) => {
+    if (state.q && state.q.live && state.livePhase === "ready") { watchLive(); return; }
+    if (!loupeAllowed()) return;
     const p = toCanvasXY(e.clientX, e.clientY);
     state.loupe = { x: p.x, y: p.y, touch: e.pointerType !== "mouse" };
     render();
   });
-  const hideLoupe = () => { state.loupe = null; render(); };
+  const hideLoupe = () => { if (state.loupe) { state.loupe = null; render(); } };
   canvas.addEventListener("pointerleave", hideLoupe);
   canvas.addEventListener("pointerup", (e) => { if (e.pointerType !== "mouse") hideLoupe(); });
   canvas.addEventListener("pointercancel", hideLoupe);
@@ -554,7 +794,8 @@
       mb.appendChild(b);
     }
     const ready = state.choiceMargin && (dead || state.choiceWinner !== null);
-    $("btn-judge").disabled = state.answered || !ready;
+    const watched = !q.live || state.livePhase === "watched";
+    $("btn-judge").disabled = state.answered || !ready || !watched;
   }
 
   function renderStatus() {
@@ -563,7 +804,11 @@
   }
 
   function nextQuestion() {
-    state.q = makeQuestion(state.mode);
+    state.animId++; // 再生中の映像を止める
+    state.q = makeQuestion(state.mode, state.live);
+    state.livePhase = "ready";
+    state.liveT = 0;
+    state.viewsUsed = 0;
     state.choiceWinner = null;
     state.choiceMargin = null;
     state.answered = false;
@@ -573,7 +818,7 @@
     $("btn-judge").classList.remove("hidden");
     updateView();
     composeImage(); render();
-    renderChoices(); renderStatus();
+    renderChoices(); renderStatus(); renderPlayRow();
   }
 
   function judge() {
@@ -614,8 +859,9 @@
     $("btn-judge").classList.add("hidden");
     $("btn-next").classList.remove("hidden");
     $("btn-next").textContent = state.qIndex + 1 >= QUESTIONS ? "結果を見る" : "次の問題へ";
-    composeImage(); render();
-    renderChoices(); renderStatus();
+    if (q.live) revealLive();
+    else { composeImage(); render(); }
+    renderChoices(); renderStatus(); renderPlayRow();
   }
 
   function titleFor(score) {
@@ -628,9 +874,10 @@
   }
 
   function finish() {
-    const prev = loadBest(state.mode);
+    const prev = loadBest(state.mode, state.live);
     const isBest = state.score > prev;
     if (isBest) saveBest(state.score);
+    state.animId++;
     $("end-score").textContent = `${state.score} / ${QUESTIONS * 3}`;
     $("end-title").textContent = titleFor(state.score);
     $("end-best").textContent = isBest ? "ベスト更新！" : `ベスト: ${Math.max(prev, state.score)}点`;
@@ -643,6 +890,7 @@
   function startGame() {
     state.mode = Number(document.querySelector('input[name="mode"]:checked').value);
     state.grid = $("opt-grid").checked;
+    state.live = document.querySelector('input[name="view"]:checked').value === "live";
     state.qIndex = 0;
     state.score = 0;
     state.history = [];
@@ -652,6 +900,10 @@
 
   $("btn-start").addEventListener("click", startGame);
   $("btn-judge").addEventListener("click", judge);
+  $("btn-play").addEventListener("click", () => {
+    if (state.answered) revealLive();
+    else watchLive();
+  });
   $("btn-next").addEventListener("click", () => {
     state.qIndex++;
     if (state.qIndex >= QUESTIONS) finish();
