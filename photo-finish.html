@@ -76,6 +76,14 @@
   .final-banner.ex { background: #312e81; color: #c7d2fe; }
   .panel.ex { background: #1e1b4b; border-color: #6366f1; }
   .panel.locked { opacity: 0.75; }
+  .rank-list { list-style: none; padding: 0; margin: 8px 0 0; }
+  .rank-list li { display: flex; gap: 10px; align-items: baseline; padding: 6px 4px; border-bottom: 1px solid rgba(16, 185, 129, 0.3); }
+  .rank-list li.me { background: rgba(251, 191, 36, 0.15); }
+  .rank-list .no { width: 2.2em; font-weight: bold; color: var(--accent); text-align: right; }
+  .rank-list .nm { flex: 1; overflow-wrap: anywhere; }
+  .rank-list .sc { font-weight: bold; }
+  .rank-list .dt { color: var(--muted); font-size: 0.8rem; }
+  input[type="text"] { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: #022c22; color: var(--text); min-height: 44px; }
   button.ex { background: #6366f1; border-color: #6366f1; color: #fff; font-weight: bold; padding: 10px 24px; }
 </style>
 </head>
@@ -108,7 +116,10 @@
         <label class="opt"><input type="radio" name="mode" value="3" /> 上級（3頭）</label>
       </div>
       <p class="muted" id="best"></p>
-      <button class="primary" id="btn-start">スタート</button>
+      <div class="row">
+        <button class="primary" id="btn-start">スタート</button>
+        <button id="btn-rank">🏆 ランキング</button>
+      </div>
     </div>
     <div class="panel ex" id="extra-panel">
       <h2>⚡ エクストラモード</h2>
@@ -146,6 +157,18 @@
     <div class="result hidden" id="result"></div>
   </section>
 
+  <!-- ランキング画面 -->
+  <section id="screen-rank" class="hidden">
+    <div class="panel">
+      <h2>🏆 ランキング</h2>
+      <div class="row" id="rank-tabs"></div>
+      <div class="row" id="rank-scope" style="margin-top:8px;"></div>
+      <ol class="rank-list" id="rank-list"></ol>
+      <p class="muted" id="rank-note"></p>
+    </div>
+    <button id="btn-rank-back">タイトルへ</button>
+  </section>
+
   <!-- 結果画面 -->
   <section id="screen-end" class="hidden">
     <div class="panel" style="text-align:center;">
@@ -158,6 +181,15 @@
         <div style="font-size:1.1rem;font-weight:bold;color:#c7d2fe;">⚡ 満点達成！エクストラモードが開放されました</div>
         <button class="ex" id="btn-extra-end" style="margin-top:8px;">エクストラに挑戦</button>
       </div>
+    </div>
+    <div class="panel" id="register-panel">
+      <h2>ランキングに登録</h2>
+      <div class="row">
+        <input type="text" id="rank-name" maxlength="12" placeholder="名前（12文字まで）" />
+        <button class="primary" id="btn-register">登録</button>
+      </div>
+      <p class="muted" id="register-msg" style="margin-bottom:0;"></p>
+      <button class="hidden" id="btn-see-rank" style="margin-top:8px;">🏆 ランキングを見る</button>
     </div>
     <div class="panel">
       <h2>各レースの結果</h2>
@@ -229,6 +261,17 @@
   };
   const EXTRA_HORSES = 3;
   const EXTRA_VIEWS = 1;
+
+  // ランキング。board は 初級・上級・エクストラ の3種類
+  const BOARDS = [
+    { id: "easy",  label: "初級",       unit: "点" },
+    { id: "hard",  label: "上級",       unit: "点" },
+    { id: "extra", label: "エクストラ", unit: "連続" },
+  ];
+  const RANK_SIZE = 10;
+  // みんなのランキング（Firebase Firestore）。projectId と apiKey を入れると有効になる
+  const ONLINE = { projectId: "", apiKey: "" };
+  const onlineEnabled = () => Boolean(ONLINE.projectId && ONLINE.apiKey);
 
   // 枠色（帽子の色）: 1白 2黒 3赤 4青 5黄 6緑 7橙 8桃
   const WAKU_COLORS = ["#f8fafc", "#111827", "#dc2626", "#2563eb", "#facc15", "#16a34a", "#f97316", "#f472b6"];
@@ -636,7 +679,7 @@
   }
 
   function showScreen(name) {
-    for (const s of ["start", "game", "end"]) $("screen-" + s).classList.toggle("hidden", s !== name);
+    for (const s of ["start", "game", "end", "rank"]) $("screen-" + s).classList.toggle("hidden", s !== name);
     window.scrollTo(0, 0);
   }
 
@@ -961,7 +1004,7 @@
 
   function finish() {
     state.animId++;
-    if (state.extra) { finishExtra(); renderHistory(); showScreen("end"); return; }
+    if (state.extra) { finishExtra(); renderHistory(); prepareRegister(); showScreen("end"); return; }
     const prev = loadBest(state.mode);
     const isBest = state.score > prev;
     if (isBest) saveBest(state.score);
@@ -975,7 +1018,148 @@
     if (perfectRun) saveFlag(EXTRA_UNLOCK_KEY, 1);
     $("end-unlock").classList.toggle("hidden", !perfectRun);
     renderHistory();
+    prepareRegister();
     showScreen("end");
+  }
+
+  // ---------------------------------------------------------------
+  // ランキング
+  // ---------------------------------------------------------------
+  const LOCAL_RANK_KEY = "photoFinishRanking:v1";
+  const NAME_KEY = "photoFinishName";
+  const currentBoard = () => (state.extra ? "extra" : state.mode === 3 ? "hard" : "easy");
+  const currentScore = () => (state.extra ? state.streak : state.score);
+  const escapeHtml = (t) => String(t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const formatDate = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : `${d.getMonth() + 1}/${d.getDate()}`; };
+
+  function loadLocalRanks() {
+    try { return JSON.parse(localStorage.getItem(LOCAL_RANK_KEY)) || {}; } catch (e) { return {}; }
+  }
+  // 登録して順位（1始まり、圏外なら 0）を返す。同点は先に出した人が上
+  function addLocalRank(board, entry) {
+    const all = loadLocalRanks();
+    const list = (all[board] || []).concat([entry]);
+    list.sort((a, b) => b.score - a.score || a.date.localeCompare(b.date));
+    all[board] = list.slice(0, RANK_SIZE);
+    try { localStorage.setItem(LOCAL_RANK_KEY, JSON.stringify(all)); } catch (e) { /* 保存できなくても遊べる */ }
+    return all[board].indexOf(entry) + 1;
+  }
+
+  // Firestore の REST API（SDK を読み込まずに済む）
+  function onlineUrl(path) {
+    return `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(ONLINE.projectId)}/databases/(default)/documents${path}?key=${encodeURIComponent(ONLINE.apiKey)}`;
+  }
+  async function submitOnline(board, entry) {
+    const res = await fetch(onlineUrl(`/scores_${board}`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: {
+        name: { stringValue: entry.name },
+        score: { integerValue: String(entry.score) },
+        createdAt: { timestampValue: entry.date },
+      } }),
+    });
+    if (!res.ok) throw new Error("submit " + res.status);
+  }
+  async function fetchOnline(board) {
+    const res = await fetch(onlineUrl(":runQuery"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ structuredQuery: {
+        from: [{ collectionId: `scores_${board}` }],
+        orderBy: [{ field: { fieldPath: "score" }, direction: "DESCENDING" }], // 複合インデックスが要らないよう並び替えは1項目だけ
+        limit: RANK_SIZE,
+      } }),
+    });
+    if (!res.ok) throw new Error("fetch " + res.status);
+    const rows = await res.json();
+    return rows.filter((row) => row.document).map((row) => {
+      const f = row.document.fields || {};
+      return { name: f.name ? f.name.stringValue : "?", score: Number(f.score ? f.score.integerValue : 0), date: f.createdAt ? f.createdAt.timestampValue : "" };
+    }).sort((a, b) => b.score - a.score || a.date.localeCompare(b.date));
+  }
+
+  function prepareRegister() {
+    let name = "";
+    try { name = localStorage.getItem(NAME_KEY) || ""; } catch (e) { /* なくてもよい */ }
+    $("rank-name").value = name;
+    $("rank-name").disabled = false;
+    $("btn-register").disabled = false;
+    $("btn-see-rank").classList.add("hidden");
+    const board = BOARDS.find((b) => b.id === currentBoard());
+    $("register-msg").textContent = `${board.label}のランキングに ${currentScore()}${board.unit} で登録します` +
+      (onlineEnabled() ? "（この端末とみんなのランキング）" : "（この端末のランキング）");
+  }
+
+  async function register() {
+    if ($("btn-register").disabled) return;
+    const name = $("rank-name").value.trim().slice(0, 12) || "名無しの審判";
+    try { localStorage.setItem(NAME_KEY, name); } catch (e) { /* なくてもよい */ }
+    const board = currentBoard();
+    const entry = { name, score: currentScore(), date: new Date().toISOString() };
+    $("rank-name").disabled = true;
+    $("btn-register").disabled = true;
+    $("btn-see-rank").classList.remove("hidden");
+    const rank = addLocalRank(board, entry);
+    rankView.board = board;
+    rankView.highlight = entry.date;
+    const msg = $("register-msg");
+    msg.textContent = rank > 0 ? `この端末で第${rank}位に入りました！` : `この端末のトップ${RANK_SIZE}には届きませんでした`;
+    if (!onlineEnabled()) return;
+    msg.textContent += " みんなのランキングに送信中…";
+    try {
+      await submitOnline(board, entry);
+      msg.textContent = msg.textContent.replace(" みんなのランキングに送信中…", " みんなのランキングにも登録しました");
+    } catch (e) {
+      msg.textContent = msg.textContent.replace(" みんなのランキングに送信中…", " みんなのランキングへの送信に失敗しました（通信を確認してください）");
+    }
+  }
+
+  const rankView = { board: "easy", scope: "local", highlight: null };
+
+  async function showRanking() {
+    showScreen("rank");
+    const tabs = $("rank-tabs");
+    tabs.innerHTML = "";
+    for (const b of BOARDS) {
+      const btn = document.createElement("button");
+      btn.textContent = b.label;
+      if (b.id === rankView.board) btn.classList.add("sel");
+      btn.addEventListener("click", () => { rankView.board = b.id; showRanking(); });
+      tabs.appendChild(btn);
+    }
+    const scope = $("rank-scope");
+    scope.innerHTML = "";
+    for (const [id, label] of [["local", "この端末"], ["online", "みんな"]]) {
+      const btn = document.createElement("button");
+      btn.textContent = label;
+      if (id === rankView.scope) btn.classList.add("sel");
+      btn.addEventListener("click", () => { rankView.scope = id; showRanking(); });
+      scope.appendChild(btn);
+    }
+
+    const list = $("rank-list"), note = $("rank-note");
+    const unit = BOARDS.find((b) => b.id === rankView.board).unit;
+    list.innerHTML = "";
+    note.textContent = "";
+    let rows;
+    if (rankView.scope === "local") {
+      rows = loadLocalRanks()[rankView.board] || [];
+    } else if (!onlineEnabled()) {
+      note.textContent = "みんなのランキングは準備中です。";
+      return;
+    } else {
+      note.textContent = "読み込み中…";
+      const want = `${rankView.board}/${rankView.scope}`;
+      try { rows = await fetchOnline(rankView.board); } catch (e) { note.textContent = "読み込みに失敗しました（通信を確認してください）"; return; }
+      if (want !== `${rankView.board}/${rankView.scope}`) return; // 読み込み中に切り替えた
+      note.textContent = "";
+    }
+    if (rows.length === 0) { note.textContent = "まだ記録がありません。"; return; }
+    list.innerHTML = rows.map((e, i) =>
+      `<li class="${e.date === rankView.highlight ? "me" : ""}"><span class="no">${i + 1}</span>` +
+      `<span class="nm">${escapeHtml(e.name)}</span><span class="sc">${e.score}${unit}</span><span class="dt">${formatDate(e.date)}</span></li>`
+    ).join("");
   }
 
   function renderHistory() {
@@ -1014,6 +1198,11 @@
   });
   $("btn-retry").addEventListener("click", () => startGame(state.extra));
   $("btn-top").addEventListener("click", () => { renderBest(); showScreen("start"); });
+  $("btn-register").addEventListener("click", register);
+  $("rank-name").addEventListener("keydown", (e) => { if (e.key === "Enter") register(); });
+  $("btn-rank").addEventListener("click", () => { rankView.highlight = null; showRanking(); });
+  $("btn-see-rank").addEventListener("click", () => { rankView.scope = "local"; showRanking(); });
+  $("btn-rank-back").addEventListener("click", () => { renderBest(); showScreen("start"); });
 
   window.addEventListener("resize", () => {
     if (!state.q || $("screen-game").classList.contains("hidden")) return;
