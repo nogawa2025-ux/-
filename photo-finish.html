@@ -72,7 +72,6 @@
   .race.g1 { background: #7c2d12; color: #fde68a; }
   .final-banner { margin-bottom: 8px; padding: 8px 12px; border-radius: 8px; background: #7c2d12; color: #fde68a; font-weight: bold; text-align: center; }
   .streak { color: #fb923c; margin-left: 8px; }
-  button.bet.sel { background: #ea580c; border-color: #ea580c; color: #fff; }
 </style>
 </head>
 <body>
@@ -94,8 +93,7 @@
       <ul class="muted" style="margin-top:0;padding-left:1.2em;">
         <li>1着正解 +1点、着差正解 +2点。両方正解（同着の問題は「同着」正解）で<b>完璧</b>の3点</li>
         <li><b>連続ボーナス</b>：完璧が続くと、2連続目から +1・+2・+3点（最大+3）</li>
-        <li><b>🔥自信あり</b>：判定前に押すと、完璧ならその問題の得点が2倍。外すと −2点</li>
-        <li><b>日本ダービー</b>（最終レース）は、最後に得点が2倍（マイナスも2倍）</li>
+        <li><b>日本ダービー</b>（最終レース）は、最後に得点が2倍</li>
       </ul>
     </div>
     <div class="panel">
@@ -126,10 +124,6 @@
     <div class="row" id="margin-btns"></div>
 
     <div class="row" style="margin-top:16px;">
-      <button class="bet" id="btn-bet">🔥 自信あり</button>
-      <span class="muted">完璧なら2倍／外すと−2点</span>
-    </div>
-    <div class="row" style="margin-top:12px;">
       <button class="primary" id="btn-judge" disabled>判定！</button>
       <button class="primary hidden" id="btn-next">次の問題へ</button>
     </div>
@@ -204,7 +198,6 @@
     { name: "G1",           cats: { hana: 2.5, atama: 2, kubi: 0.8, dead: 0.8 },     close: [-0.6, 1.6], grade: true },
     { name: "日本ダービー", cats: { hana: 3, atama: 1.5, dead: 1 },                  close: [0.4, 1.8], grade: true, final: true },
   ];
-  const BET_PENALTY = 2;
   const MAX_COMBO = 3;
 
   // 枠色（帽子の色）: 1白 2黒 3赤 4青 5黄 6緑 7橙 8桃
@@ -570,9 +563,9 @@
   const state = {
     mode: 2,
     qIndex: 0, score: 0, q: null,
-    choiceWinner: null, choiceMargin: null, bet: false,
+    choiceWinner: null, choiceMargin: null,
     answered: false, history: [],
-    streak: 0, maxStreak: 0, betsWon: 0, betsMade: 0,
+    streak: 0, maxStreak: 0,
     loupe: null, // {x, y, touch}（画像全体の座標）
     view: { x: 0, w: W }, // 表示する切り出し範囲。スマホではゴール付近だけを大きく見せる
     // 映像: ready（未再生）→ playing → watched（判定待ち）→ reveal（スロー）→ done（答え表示）
@@ -580,7 +573,7 @@
   };
 
   // 得点の仕組みが変わったので以前の記録とは別に保存する
-  function bestKey(mode = state.mode) { return "photoFinishBest:v2:" + mode; }
+  function bestKey(mode = state.mode) { return "photoFinishBest:v3:" + mode; }
   function loadBest(mode) {
     try { return Number(localStorage.getItem(bestKey(mode))) || 0; } catch (e) { return 0; }
   }
@@ -762,9 +755,6 @@
     }
     const ready = state.choiceMargin && (dead || state.choiceWinner !== null);
     $("btn-judge").disabled = state.answered || !ready || state.livePhase !== "watched";
-    const bet = $("btn-bet");
-    bet.disabled = state.answered;
-    bet.classList.toggle("sel", state.bet);
   }
 
   function renderStatus() {
@@ -782,7 +772,6 @@
     state.viewsUsed = 0;
     state.choiceWinner = null;
     state.choiceMargin = null;
-    state.bet = false;
     state.answered = false;
     state.loupe = null;
     $("result").classList.add("hidden");
@@ -807,18 +796,13 @@
     }
     const perfect = base === 3;
 
-    // 連続ボーナス → 自信あり → 最終レース の順に計算
+    // 連続ボーナス → 最終レース の順に計算
     state.streak = perfect ? state.streak + 1 : 0;
     state.maxStreak = Math.max(state.maxStreak, state.streak);
     const combo = perfect ? Math.min(state.streak - 1, MAX_COMBO) : 0;
     let pts = base + combo;
     const steps = [`基本 ${base}点`];
     if (combo > 0) steps.push(`連続ボーナス +${combo}点`);
-    if (state.bet) {
-      state.betsMade++;
-      if (perfect) { state.betsWon++; pts *= 2; steps.push("🔥自信あり ×2"); }
-      else { pts = -BET_PENALTY; steps.push(`🔥自信ありで外して −${BET_PENALTY}点`); }
-    }
     if (q.race.final) { pts *= 2; steps.push("日本ダービー ×2"); }
     state.score += pts;
     state.answered = true;
@@ -845,7 +829,7 @@
     const yours = state.choiceMargin === "dead" ? chosen : `${state.choiceWinner}番・${chosen}`;
     state.history.push({
       pts, perfect,
-      text: `${q.race.name}：${answer}（あなた：${yours}${state.bet ? "・🔥" : ""}）`,
+      text: `${q.race.name}：${answer}（あなた：${yours}）`,
     });
 
     $("btn-judge").classList.add("hidden");
@@ -855,12 +839,12 @@
     renderChoices(); renderStatus(); renderPlayRow();
   }
 
-  // 全問完璧＋全部自信ありで120点
+  // 全問完璧で60点
   function titleFor(score) {
-    if (score >= 100) return "🏆 名審判！フォトチャートの申し子";
-    if (score >= 75) return "🥇 熟練の決勝審判";
-    if (score >= 50) return "🥈 一人前の判定員";
-    if (score >= 25) return "🥉 見習い判定員";
+    if (score >= 50) return "🏆 名審判！フォトチャートの申し子";
+    if (score >= 38) return "🥇 熟練の決勝審判";
+    if (score >= 25) return "🥈 一人前の判定員";
+    if (score >= 12) return "🥉 見習い判定員";
     return "🐴 まずはハナ差を見抜く練習から";
   }
 
@@ -872,7 +856,7 @@
     $("end-score").textContent = `${state.score}点`;
     $("end-title").textContent = titleFor(state.score);
     $("end-best").textContent = isBest ? "ベスト更新！" : `ベスト: ${Math.max(prev, state.score)}点`;
-    $("end-stats").textContent = `最大${state.maxStreak}連続完璧 ／ 自信あり成功 ${state.betsWon}/${state.betsMade}`;
+    $("end-stats").textContent = `最大${state.maxStreak}連続完璧`;
     $("history").innerHTML = state.history
       .map((h) => `<li><span class="${h.perfect ? "ok" : h.pts <= 0 ? "ng" : ""}">${h.pts >= 0 ? "+" : ""}${h.pts}</span> ${h.text}</li>`)
       .join("");
@@ -885,14 +869,12 @@
     state.score = 0;
     state.history = [];
     state.streak = 0; state.maxStreak = 0;
-    state.betsWon = 0; state.betsMade = 0;
     showScreen("game");
     nextQuestion();
   }
 
   $("btn-start").addEventListener("click", startGame);
   $("btn-judge").addEventListener("click", judge);
-  $("btn-bet").addEventListener("click", () => { state.bet = !state.bet; renderChoices(); });
   $("btn-play").addEventListener("click", () => {
     if (state.answered) revealLive();
     else watchLive();
