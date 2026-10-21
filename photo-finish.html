@@ -68,6 +68,11 @@
   .score-big { font-size: 2.5rem; font-weight: bold; color: var(--accent); }
   label.opt { display: inline-flex; align-items: center; gap: 6px; margin-right: 16px; min-height: 36px; }
   ol.history { padding-left: 1.4em; margin: 8px 0 0; font-size: 0.9rem; }
+  .race { display: inline-block; margin-left: 8px; padding: 0 8px; border-radius: 6px; background: var(--panel-2); font-size: 0.9rem; }
+  .race.g1 { background: #7c2d12; color: #fde68a; }
+  .final-banner { margin-bottom: 8px; padding: 8px 12px; border-radius: 8px; background: #7c2d12; color: #fde68a; font-weight: bold; text-align: center; }
+  .streak { color: #fb923c; margin-left: 8px; }
+  button.bet.sel { background: #ea580c; border-color: #ea580c; color: #fff; }
 </style>
 </head>
 <body>
@@ -78,27 +83,26 @@
   <section id="screen-start">
     <div class="panel">
       <h2>遊び方</h2>
-      <p>ゴール板を通過した瞬間の写真判定画像を見て、<b>1着の馬</b>と<b>1着と2着の着差</b>を当ててください。全10問です。</p>
-      <p class="muted">画像をなぞる（スマホは指でタッチ）と拡大鏡が出ます。縦の細い線（目盛り）は0.05馬身ごとに引かれています。</p>
-      <p class="muted"><b>リアルスピード</b>を選ぶと、静止画ではなく実際の速さ（約60km/h）で走る馬をカメラが追う映像を見て判定します。ゴール前は首の上下で鼻先が前後し、後ろの馬が追い込んでくることもあります。映像は2回まで見られ、判定後にスロー再生で答え合わせができます。</p>
+      <p>実際の速さ（約60km/h）でゴールを駆け抜ける映像を見て、<b>1着の馬</b>と<b>1着と2着の着差</b>を当ててください。</p>
+      <p class="muted">ゴール前は首の上下で鼻先が前後し、後ろの馬が追い込んでくることもあります。映像は1問につき2回まで見られ、判定後はスロー再生とゴールの瞬間の静止画で答え合わせができます。</p>
+      <h2 style="margin-top:12px;">10レース勝ち抜き</h2>
+      <p class="muted" style="margin-top:0;">新馬戦から始まり、クラスが上がるほど着差は小さく、追い込みは鋭くなります。最終第10レースは<b>日本ダービー</b>。得点が2倍になります。</p>
       <h2 style="margin-top:12px;">このゲームの着差の基準</h2>
       <table class="rule" id="rule-table"></table>
       <p class="muted">※実際の競馬の着差は審判が判定するもので、ハナ・アタマ・クビの距離には決まった値がありません。このゲームでは1馬身≒2.4mとし、上の表の範囲で出題します。</p>
       <h2 style="margin-top:12px;">得点</h2>
-      <p class="muted" style="margin-top:0;">1着正解 +1点、着差正解 +2点（1問最大3点）。同着の問題は「同着」を選べば3点です。</p>
+      <ul class="muted" style="margin-top:0;padding-left:1.2em;">
+        <li>1着正解 +1点、着差正解 +2点。両方正解（同着の問題は「同着」正解）で<b>完璧</b>の3点</li>
+        <li><b>連続ボーナス</b>：完璧が続くと、2連続目から +1・+2・+3点（最大+3）</li>
+        <li><b>🔥自信あり</b>：判定前に押すと、完璧ならその問題の得点が2倍。外すと −2点</li>
+        <li><b>日本ダービー</b>（最終レース）は、最後に得点が2倍（マイナスも2倍）</li>
+      </ul>
     </div>
     <div class="panel">
       <h2>設定</h2>
       <div>
         <label class="opt"><input type="radio" name="mode" value="2" checked /> 初級（2頭）</label>
         <label class="opt"><input type="radio" name="mode" value="3" /> 上級（3頭）</label>
-      </div>
-      <div>
-        <label class="opt"><input type="radio" name="view" value="photo" checked /> 写真判定（静止画）</label>
-        <label class="opt"><input type="radio" name="view" value="live" /> リアルスピード（動画）</label>
-      </div>
-      <div>
-        <label class="opt"><input type="checkbox" id="opt-grid" checked /> 目盛り線を表示（写真判定のみ）</label>
       </div>
       <p class="muted" id="best"></p>
       <button class="primary" id="btn-start">スタート</button>
@@ -107,13 +111,14 @@
 
   <!-- ゲーム画面 -->
   <section id="screen-game" class="hidden">
+    <div class="final-banner hidden" id="final-banner">🏆 最終レース 日本ダービー　得点2倍！</div>
     <div class="status"><span id="q-no"></span><span id="q-score"></span></div>
     <div class="canvas-box"><canvas id="photo" width="1000" height="520"></canvas></div>
-    <div class="row hidden" id="play-row" style="margin-top:8px;">
+    <div class="row" id="play-row" style="margin-top:8px;">
       <button class="primary" id="btn-play">▶ 再生</button>
       <span class="muted" id="play-info"></span>
     </div>
-    <p class="muted" style="margin:6px 0 0;" id="canvas-hint">画像をなぞると拡大鏡が出ます。</p>
+    <p class="muted" style="margin:6px 0 0;">映像は実際の速さ（約60km/h）で流れます。判定後はゴールの瞬間で止まり、拡大鏡で確認できます。</p>
 
     <div class="label">1着は？</div>
     <div class="row" id="winner-btns"></div>
@@ -121,6 +126,10 @@
     <div class="row" id="margin-btns"></div>
 
     <div class="row" style="margin-top:16px;">
+      <button class="bet" id="btn-bet">🔥 自信あり</button>
+      <span class="muted">完璧なら2倍／外すと−2点</span>
+    </div>
+    <div class="row" style="margin-top:12px;">
       <button class="primary" id="btn-judge" disabled>判定！</button>
       <button class="primary hidden" id="btn-next">次の問題へ</button>
     </div>
@@ -134,6 +143,7 @@
       <div class="score-big" id="end-score"></div>
       <div style="font-size:1.2rem;font-weight:bold;" id="end-title"></div>
       <div class="muted" id="end-best"></div>
+      <div class="muted" id="end-stats"></div>
     </div>
     <div class="panel">
       <h2>各問の結果</h2>
@@ -157,10 +167,9 @@
   const L = 260;               // 1馬身のピクセル数（鼻先〜尻までの長さを100単位で描画）
   const METERS_PER_LENGTH = 2.4;
   const QUESTIONS = 10;
-  const GRID_STEP = 0.05;      // 目盛り線の間隔（馬身）
   const PX_PER_M = L / METERS_PER_LENGTH;
 
-  // リアルスピードモードの設定
+  // 映像の設定
   const LIVE = {
     tStar: 1.4,      // 1着馬の鼻先がゴールに届く時刻（秒）
     duration: 2.2,   // 映像の長さ（秒）
@@ -173,14 +182,30 @@
 
   // 着差カテゴリ（このゲーム独自の基準）。範囲の間にすき間を空けて正解が曖昧にならないようにしている
   const CATS = [
-    { id: "dead",  label: "同着",    min: 0,     max: 0,    w: 0.6 },
-    { id: "hana",  label: "ハナ",    min: 0.015, max: 0.06, w: 2.0 },
-    { id: "atama", label: "アタマ",  min: 0.08,  max: 0.14, w: 2.0 },
-    { id: "kubi",  label: "クビ",    min: 0.2,   max: 0.3,  w: 2.0 },
-    { id: "half",  label: "1/2馬身", min: 0.42,  max: 0.58, w: 1.2 },
-    { id: "3q",    label: "3/4馬身", min: 0.68,  max: 0.82, w: 1.0 },
-    { id: "one",   label: "1馬身",   min: 0.92,  max: 1.08, w: 0.8 },
+    { id: "dead",  label: "同着",    min: 0,     max: 0    },
+    { id: "hana",  label: "ハナ",    min: 0.015, max: 0.06 },
+    { id: "atama", label: "アタマ",  min: 0.08,  max: 0.14 },
+    { id: "kubi",  label: "クビ",    min: 0.2,   max: 0.3  },
+    { id: "half",  label: "1/2馬身", min: 0.42,  max: 0.58 },
+    { id: "3q",    label: "3/4馬身", min: 0.68,  max: 0.82 },
+    { id: "one",   label: "1馬身",   min: 0.92,  max: 1.08 },
   ];
+
+  // 10レースの番組。後半ほど着差が小さく（cats の重み）、後ろの馬の追い込みが鋭く（close: 1着馬との速さの差 m/s）なる
+  const RACES = [
+    { name: "新馬戦",       cats: { half: 2, "3q": 2, one: 2, kubi: 1 },             close: [-0.4, 0.6] },
+    { name: "未勝利戦",     cats: { half: 2, "3q": 1.5, one: 1, kubi: 1.5 },         close: [-0.4, 0.8] },
+    { name: "1勝クラス",    cats: { kubi: 2, half: 2, "3q": 1, atama: 1 },           close: [-0.5, 1.0] },
+    { name: "2勝クラス",    cats: { kubi: 2, atama: 1.5, half: 1.5, hana: 0.8 },     close: [-0.5, 1.1] },
+    { name: "3勝クラス",    cats: { atama: 2, kubi: 2, hana: 1, half: 1 },           close: [-0.6, 1.2] },
+    { name: "オープン特別", cats: { atama: 2, hana: 1.5, kubi: 1.5, half: 0.5, dead: 0.3 }, close: [-0.6, 1.3] },
+    { name: "G3",           cats: { hana: 2, atama: 2, kubi: 1, dead: 0.5 },         close: [-0.6, 1.4], grade: true },
+    { name: "G2",           cats: { hana: 2, atama: 2, kubi: 1, dead: 0.6 },         close: [-0.6, 1.5], grade: true },
+    { name: "G1",           cats: { hana: 2.5, atama: 2, kubi: 0.8, dead: 0.8 },     close: [-0.6, 1.6], grade: true },
+    { name: "日本ダービー", cats: { hana: 3, atama: 1.5, dead: 1 },                  close: [0.4, 1.8], grade: true, final: true },
+  ];
+  const BET_PENALTY = 2;
+  const MAX_COMBO = 3;
 
   // 枠色（帽子の色）: 1白 2黒 3赤 4青 5黄 6緑 7橙 8桃
   const WAKU_COLORS = ["#f8fafc", "#111827", "#dc2626", "#2563eb", "#facc15", "#16a34a", "#f97316", "#f472b6"];
@@ -224,13 +249,13 @@
   // ---------------------------------------------------------------
   // 出題データ生成
   // ---------------------------------------------------------------
-  function makeQuestion(horseCount, live) {
-    const cat = pickWeighted(rand, CATS);
+  function makeQuestion(horseCount, race) {
+    const cat = pickWeighted(rand, Object.entries(race.cats).map(([id, w]) => ({ ...CATS.find((c) => c.id === id), w })));
     const margin = cat.id === "dead" ? 0 : between(rand, cat.min, cat.max);
 
     // 出走頭数16頭想定で馬番を選び、枠番は馬番から算出
     const nums = shuffle(rand, Array.from({ length: 16 }, (_, i) => i + 1)).slice(0, horseCount).sort((a, b) => a - b);
-    const finishX = live ? LIVE.anchor : between(rand, 660, 800);
+    const finishX = LIVE.anchor;
 
     // 着順（behind = 1着からの差、馬身）
     const behinds = [0, margin];
@@ -243,21 +268,19 @@
     const horses = order.map((num, i) => ({
       num,
       waku: Math.ceil(num / 2),
-      noseX: finishX - behinds[i] * L,
       y: lanes[i],
       coat: pick(rand, COATS),
       silk: pick(rand, SILKS),
       silk2: pick(rand, SILKS),
-      lean: live ? 0 : between(rand, -0.04, 0.04),
       phase: rand(),
     }));
 
     const q = {
-      cat, margin, finishX, horses, live,
+      cat, margin, finishX, horses, race,
       winner: order[0],
       seed: Math.floor(rand() * 1e9),
     };
-    if (live) setupLive(q, behinds);
+    setupLive(q, behinds);
     return q;
   }
 
@@ -266,7 +289,7 @@
     const F = 0; // ゴール位置（m）
     const v1 = between(rand, 16.3, 17.3); // 約60km/h
     q.horses.forEach((h, i) => {
-      h.v = i === 0 ? v1 : v1 + between(rand, -0.6, 1.4); // 後ろの馬は追い込んでくることが多い
+      h.v = i === 0 ? v1 : v1 + between(rand, q.race.close[0], q.race.close[1]); // 後ろの馬は追い込んでくることが多い
       h.bobPhase = rand();
       const target = F - behinds[i] * METERS_PER_LENGTH;
       h.p0 = target - h.v * LIVE.tStar - liveBob(h, LIVE.tStar);
@@ -298,34 +321,7 @@
   // ---------------------------------------------------------------
   // 描画
   // ---------------------------------------------------------------
-  // 写真判定画像は横軸が時間なので、止まっている背景は横方向の縞模様になる
-  function drawBackground(ctx, seed) {
-    const r = mulberry32(seed);
-    // スタンド・空
-    for (let y = 0; y < 90; y += 3) {
-      const g = Math.floor(between(r, 150, 200));
-      ctx.fillStyle = `rgb(${g - 10},${g},${g + 15})`;
-      ctx.fillRect(0, y, W, 3);
-    }
-    // 外ラチ
-    ctx.fillStyle = "#e5e7eb"; ctx.fillRect(0, 90, W, 8);
-    ctx.fillStyle = "#6b7280"; ctx.fillRect(0, 98, W, 3);
-    // 芝コース
-    for (let y = 101; y < H; y += 2) {
-      const t = (y - 101) / (H - 101);
-      const g = Math.floor(between(r, 95, 125) + t * 20);
-      ctx.fillStyle = `rgb(${Math.floor(g * 0.45)},${g},${Math.floor(g * 0.35)})`;
-      ctx.fillRect(0, y, W, 2);
-    }
-    // ところどころに目立つ縞
-    for (let i = 0; i < 12; i++) {
-      const y = Math.floor(between(r, 101, H));
-      ctx.fillStyle = `rgba(255,255,255,${between(r, 0.03, 0.09)})`;
-      ctx.fillRect(0, y, W, 1);
-    }
-  }
-
-  // リアルスピードの背景。カメラが横に流れるので、スタンド・ラチ・芝の模様が流れていく
+  // 背景。カメラが横に流れるので、スタンド・ラチ・芝の模様が流れていく
   function drawLiveBackground(ctx, q, t) {
     const r = mulberry32(q.seed);
     const camPx = liveCam(q, t) * PX_PER_M;
@@ -378,7 +374,7 @@
     ctx.restore();
   }
 
-  // リアルスピードのゴール線。見やすいよう馬の上に重ねて描き、ゴールの瞬間は黄色く光らせる
+  // ゴール線。見やすいよう馬の上に重ねて描き、ゴールの瞬間は黄色く光らせる
   function drawLiveGoalLine(ctx, x, glow) {
     if (x < -20 || x > W + 20) return;
     ctx.save();
@@ -420,7 +416,7 @@
     ctx.stroke();
   }
 
-  // 走っている脚の形（リアルスピード用）。phase は完歩の位相（0〜1）
+  // 走っている脚の形。phase は完歩の位相（0〜1）
   function gallopLeg(front, x, y, phase) {
     const th = 2 * Math.PI * phase;
     let a1, a2;
@@ -443,24 +439,17 @@
     ctx.save();
     ctx.translate(h.noseX, h.y);
     ctx.scale(u, u);
-    ctx.rotate(h.lean);
 
     const body = h.coat.body, mane = h.coat.mane;
 
     // 尻尾
     line(ctx, [[-94, 6], [-104, 12], [-112, 28]], 5, mane);
 
-    const running = h.v !== undefined;
-    if (running) ctx.translate(0, 1.5 * Math.sin(4 * Math.PI * h.phase)); // 走りに合わせた上下動
+    ctx.translate(0, 1.5 * Math.sin(4 * Math.PI * h.phase)); // 走りに合わせた上下動
 
     // 奥側の脚
-    if (running) {
-      line(ctx, gallopLeg(false, -82, 18, h.phase + 0.62), 5, mane);
-      line(ctx, gallopLeg(true, -36, 20, h.phase + 0.12), 5, mane);
-    } else {
-      line(ctx, [[-82, 18], [-96, 34], [-106, 48]], 5, mane);
-      line(ctx, [[-36, 20], [-46, 36], [-56, 50]], 5, mane);
-    }
+    line(ctx, gallopLeg(false, -82, 18, h.phase + 0.62), 5, mane);
+    line(ctx, gallopLeg(true, -36, 20, h.phase + 0.12), 5, mane);
 
     // 胴
     ctx.fillStyle = body;
@@ -497,17 +486,10 @@
     ctx.beginPath(); ctx.arc(-11, -14, 1.3, 0, Math.PI * 2); ctx.fill();
 
     // 手前側の脚
-    if (running) {
-      for (const leg of [gallopLeg(false, -80, 20, h.phase + 0.52), gallopLeg(true, -30, 22, h.phase)]) {
-        line(ctx, leg, 5.5, body);
-        const [fx, fy] = leg[2];
-        line(ctx, [[fx - 1, fy - 1], [fx + 1, fy + 1]], 4, "#111");
-      }
-    } else {
-      line(ctx, [[-80, 20], [-70, 36], [-62, 51]], 5.5, body);
-      line(ctx, [[-30, 22], [-18, 36], [-9, 47]], 5.5, body);
-      line(ctx, [[-63, 50], [-60, 53]], 4, "#111");
-      line(ctx, [[-10, 46], [-7, 49]], 4, "#111");
+    for (const leg of [gallopLeg(false, -80, 20, h.phase + 0.52), gallopLeg(true, -30, 22, h.phase)]) {
+      line(ctx, leg, 5.5, body);
+      const [fx, fy] = leg[2];
+      line(ctx, [[fx - 1, fy - 1], [fx + 1, fy + 1]], 4, "#111");
     }
 
     // ゼッケン
@@ -536,34 +518,6 @@
     ctx.beginPath(); ctx.arc(-35, -25, 6, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = "#111"; ctx.lineWidth = 0.8; ctx.stroke();
 
-    ctx.restore();
-  }
-
-  function drawGrid(ctx, finishX) {
-    ctx.save();
-    for (let k = -6; k <= 40; k++) {
-      const x = finishX - k * GRID_STEP * L;
-      if (x < 0 || x > W) continue;
-      ctx.strokeStyle = k % 10 === 0 ? "rgba(255,255,255,0.32)" : "rgba(255,255,255,0.14)";
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(x + 0.5, 101); ctx.lineTo(x + 0.5, H); ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  function drawFinishLine(ctx, x, label = true) {
-    ctx.save();
-    ctx.fillStyle = "rgba(255,255,255,0.75)";
-    ctx.fillRect(x - 2.5, 0, 5, H);
-    ctx.fillStyle = "#dc2626";
-    ctx.fillRect(x - 1.5, 0, 3, H);
-    if (!label) { ctx.restore(); return; }
-    ctx.font = "bold 18px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#dc2626";
-    ctx.fillRect(x - 34, 4, 68, 26);
-    ctx.fillStyle = "#fff";
-    ctx.fillText("ゴール", x, 24);
     ctx.restore();
   }
 
@@ -614,22 +568,21 @@
   const cctx = comp.getContext("2d");
 
   const state = {
-    mode: 2, grid: true,
+    mode: 2,
     qIndex: 0, score: 0, q: null,
-    choiceWinner: null, choiceMargin: null,
+    choiceWinner: null, choiceMargin: null, bet: false,
     answered: false, history: [],
+    streak: 0, maxStreak: 0, betsWon: 0, betsMade: 0,
     loupe: null, // {x, y, touch}（画像全体の座標）
     view: { x: 0, w: W }, // 表示する切り出し範囲。スマホではゴール付近だけを大きく見せる
-    live: false,
-    // リアルスピード: ready（未再生）→ playing → watched（判定待ち）→ reveal（スロー）→ done（答え表示）
+    // 映像: ready（未再生）→ playing → watched（判定待ち）→ reveal（スロー）→ done（答え表示）
     livePhase: "ready", liveT: 0, viewsUsed: 0, animId: 0,
   };
 
-  function bestKey(mode = state.mode, live = state.live) {
-    return "photoFinishBest:" + (live ? "live:" : "") + mode;
-  }
-  function loadBest(mode, live) {
-    try { return Number(localStorage.getItem(bestKey(mode, live))) || 0; } catch (e) { return 0; }
+  // 得点の仕組みが変わったので以前の記録とは別に保存する
+  function bestKey(mode = state.mode) { return "photoFinishBest:v2:" + mode; }
+  function loadBest(mode) {
+    try { return Number(localStorage.getItem(bestKey(mode))) || 0; } catch (e) { return 0; }
   }
   function saveBest(v) {
     try { localStorage.setItem(bestKey(), String(v)); } catch (e) { /* 保存できなくても遊べる */ }
@@ -650,31 +603,17 @@
   }
 
   function renderBest() {
-    $("best").innerHTML =
-      `ベスト（${QUESTIONS * 3}点満点）<br>写真判定：初級 ${loadBest(2, false)}点 ／ 上級 ${loadBest(3, false)}点<br>` +
-      `リアルスピード：初級 ${loadBest(2, true)}点 ／ 上級 ${loadBest(3, true)}点`;
+    $("best").textContent = `ベスト：初級 ${loadBest(2)}点 ／ 上級 ${loadBest(3)}点`;
   }
 
   function composeImage() {
-    const q = state.q;
-    if (q.live) { composeLive(); return; }
-    drawBackground(cctx, q.seed);
-    if (state.grid) drawGrid(cctx, q.finishX);
-    // 奥の馬（y が小さい）から描く
-    const byDepth = q.horses.slice().sort((a, b) => a.y - b.y);
-    for (const h of byDepth) drawHorse(cctx, h);
-    drawFinishLine(cctx, q.finishX);
-    if (state.answered) drawAnswerOverlay(cctx, q, state.view);
-  }
-
-  function composeLive() {
     const q = state.q;
     const done = state.livePhase === "done";
     const t = done ? LIVE.tStar : state.liveT;
     const snap = liveSnapshot(q, t);
     drawLiveBackground(cctx, q, t);
     drawFinishPost(cctx, snap.finishX);
-    const byDepth = snap.horses.slice().sort((a, b) => a.y - b.y);
+    const byDepth = snap.horses.slice().sort((a, b) => a.y - b.y); // 奥の馬（y が小さい）から描く
     for (const h of byDepth) drawHorse(cctx, h);
     drawLiveGoalLine(cctx, snap.finishX, !done && Math.abs(t - LIVE.tStar) < 0.05);
     if (done) drawAnswerOverlay(cctx, snap, state.view);
@@ -729,12 +668,6 @@
   }
 
   function renderPlayRow() {
-    const live = state.q && state.q.live;
-    $("play-row").classList.toggle("hidden", !live);
-    $("canvas-hint").textContent = live
-      ? "映像は実際の速さ（約60km/h）で流れます。判定後はゴールの瞬間で止まり、拡大鏡で確認できます。"
-      : "画像をなぞると拡大鏡が出ます。";
-    if (!live) return;
     const b = $("btn-play"), info = $("play-info");
     const left = LIVE.views - state.viewsUsed;
     if (state.answered) {
@@ -751,8 +684,7 @@
   function updateView() {
     const narrow = canvas.parentElement.clientWidth < 640;
     const w = narrow ? 560 : W;
-    const ratio = state.q.live ? 0.62 : 0.78; // リアルスピードはゴール線が早めに見えるよう中央寄りにする
-    const x = Math.min(W - w, Math.max(0, Math.round(state.q.finishX - w * ratio)));
+    const x = Math.min(W - w, Math.max(0, Math.round(state.q.finishX - w * 0.62))); // ゴール線が早めに見えるよう中央寄り
     state.view = { x, w };
     if (canvas.width !== w) canvas.width = w;
   }
@@ -783,7 +715,7 @@
     };
   }
 
-  const loupeAllowed = () => !state.q || !state.q.live || state.livePhase === "done";
+  const loupeAllowed = () => state.livePhase === "done";
   canvas.addEventListener("pointermove", (e) => {
     if (!loupeAllowed()) return;
     const p = toCanvasXY(e.clientX, e.clientY);
@@ -791,7 +723,7 @@
     render();
   });
   canvas.addEventListener("pointerdown", (e) => {
-    if (state.q && state.q.live && state.livePhase === "ready") { watchLive(); return; }
+    if (state.q && state.livePhase === "ready") { watchLive(); return; }
     if (!loupeAllowed()) return;
     const p = toCanvasXY(e.clientX, e.clientY);
     state.loupe = { x: p.x, y: p.y, touch: e.pointerType !== "mouse" };
@@ -829,23 +761,28 @@
       mb.appendChild(b);
     }
     const ready = state.choiceMargin && (dead || state.choiceWinner !== null);
-    const watched = !q.live || state.livePhase === "watched";
-    $("btn-judge").disabled = state.answered || !ready || !watched;
+    $("btn-judge").disabled = state.answered || !ready || state.livePhase !== "watched";
+    const bet = $("btn-bet");
+    bet.disabled = state.answered;
+    bet.classList.toggle("sel", state.bet);
   }
 
   function renderStatus() {
-    $("q-no").textContent = `第${state.qIndex + 1}問 / ${QUESTIONS}`;
-    $("q-score").textContent = `得点 ${state.score}`;
+    const race = RACES[state.qIndex];
+    $("final-banner").classList.toggle("hidden", !race.final);
+    $("q-no").innerHTML = `第${state.qIndex + 1}レース / ${QUESTIONS}<span class="race${race.grade ? " g1" : ""}">${race.name}</span>`;
+    $("q-score").innerHTML = `得点 ${state.score}` + (state.streak >= 2 ? `<span class="streak">🔥${state.streak}連続完璧</span>` : "");
   }
 
   function nextQuestion() {
     state.animId++; // 再生中の映像を止める
-    state.q = makeQuestion(state.mode, state.live);
+    state.q = makeQuestion(state.mode, RACES[state.qIndex]);
     state.livePhase = "ready";
     state.liveT = 0;
     state.viewsUsed = 0;
     state.choiceWinner = null;
     state.choiceMargin = null;
+    state.bet = false;
     state.answered = false;
     state.loupe = null;
     $("result").classList.add("hidden");
@@ -858,16 +795,31 @@
 
   function judge() {
     const q = state.q;
-    let pts = 0, winnerOk = false, marginOk = false;
+    let base = 0, winnerOk = false, marginOk = false;
     if (q.cat.id === "dead") {
       marginOk = state.choiceMargin === "dead";
       winnerOk = marginOk;
-      pts = marginOk ? 3 : 0;
+      base = marginOk ? 3 : 0;
     } else if (state.choiceMargin !== "dead") {
       winnerOk = state.choiceWinner === q.winner;
       marginOk = state.choiceMargin === q.cat.id;
-      pts = (winnerOk ? 1 : 0) + (marginOk ? 2 : 0);
+      base = (winnerOk ? 1 : 0) + (marginOk ? 2 : 0);
     }
+    const perfect = base === 3;
+
+    // 連続ボーナス → 自信あり → 最終レース の順に計算
+    state.streak = perfect ? state.streak + 1 : 0;
+    state.maxStreak = Math.max(state.maxStreak, state.streak);
+    const combo = perfect ? Math.min(state.streak - 1, MAX_COMBO) : 0;
+    let pts = base + combo;
+    const steps = [`基本 ${base}点`];
+    if (combo > 0) steps.push(`連続ボーナス +${combo}点`);
+    if (state.bet) {
+      state.betsMade++;
+      if (perfect) { state.betsWon++; pts *= 2; steps.push("🔥自信あり ×2"); }
+      else { pts = -BET_PENALTY; steps.push(`🔥自信ありで外して −${BET_PENALTY}点`); }
+    }
+    if (q.race.final) { pts *= 2; steps.push("日本ダービー ×2"); }
     state.score += pts;
     state.answered = true;
 
@@ -879,62 +831,68 @@
     const detail = q.cat.id === "dead"
       ? `同着 ${mark(marginOk)}`
       : `1着 ${mark(winnerOk)} ／ 着差 ${mark(marginOk)}`;
-    const headline = pts === 3 ? '<span class="ok">完璧！</span>' : pts > 0 ? "おしい！" : '<span class="ng">ハズレ…</span>';
-    $("result").innerHTML = `<div class="big">${headline} +${pts}点</div><div>${detail}</div><div>${truth}</div>`;
+    const headline = perfect
+      ? `<span class="ok">${state.streak >= 2 ? `🔥${state.streak}連続 完璧！` : "完璧！"}</span>`
+      : base > 0 ? "おしい！" : '<span class="ng">ハズレ…</span>';
+    const sign = pts >= 0 ? "+" : "";
+    $("result").innerHTML =
+      `<div class="big">${headline} ${sign}${pts}点</div><div>${detail}</div><div>${truth}</div>` +
+      `<div class="muted">${steps.join(" → ")} ＝ ${sign}${pts}点</div>`;
     $("result").classList.remove("hidden");
 
     const chosen = CATS.find((c) => c.id === state.choiceMargin).label;
+    const answer = q.cat.id === "dead" ? "同着" : `${q.winner}番・${q.cat.label}`;
+    const yours = state.choiceMargin === "dead" ? chosen : `${state.choiceWinner}番・${chosen}`;
     state.history.push({
-      pts,
-      text: q.cat.id === "dead"
-        ? `同着（あなた：${chosen}）`
-        : `${q.winner}番・${q.cat.label}（あなた：${state.choiceMargin === "dead" ? "" : state.choiceWinner + "番・"}${chosen}）`,
+      pts, perfect,
+      text: `${q.race.name}：${answer}（あなた：${yours}${state.bet ? "・🔥" : ""}）`,
     });
 
     $("btn-judge").classList.add("hidden");
     $("btn-next").classList.remove("hidden");
-    $("btn-next").textContent = state.qIndex + 1 >= QUESTIONS ? "結果を見る" : "次の問題へ";
-    if (q.live) revealLive();
-    else { composeImage(); render(); }
+    $("btn-next").textContent = state.qIndex + 1 >= QUESTIONS ? "結果を見る" : "次のレースへ";
+    revealLive();
     renderChoices(); renderStatus(); renderPlayRow();
   }
 
+  // 全問完璧＋全部自信ありで120点
   function titleFor(score) {
-    const r = score / (QUESTIONS * 3);
-    if (r >= 0.95) return "🏆 名審判！フォトチャートの申し子";
-    if (r >= 0.8) return "🥇 熟練の決勝審判";
-    if (r >= 0.6) return "🥈 一人前の判定員";
-    if (r >= 0.4) return "🥉 見習い判定員";
+    if (score >= 100) return "🏆 名審判！フォトチャートの申し子";
+    if (score >= 75) return "🥇 熟練の決勝審判";
+    if (score >= 50) return "🥈 一人前の判定員";
+    if (score >= 25) return "🥉 見習い判定員";
     return "🐴 まずはハナ差を見抜く練習から";
   }
 
   function finish() {
-    const prev = loadBest(state.mode, state.live);
+    const prev = loadBest(state.mode);
     const isBest = state.score > prev;
     if (isBest) saveBest(state.score);
     state.animId++;
-    $("end-score").textContent = `${state.score} / ${QUESTIONS * 3}`;
+    $("end-score").textContent = `${state.score}点`;
     $("end-title").textContent = titleFor(state.score);
     $("end-best").textContent = isBest ? "ベスト更新！" : `ベスト: ${Math.max(prev, state.score)}点`;
+    $("end-stats").textContent = `最大${state.maxStreak}連続完璧 ／ 自信あり成功 ${state.betsWon}/${state.betsMade}`;
     $("history").innerHTML = state.history
-      .map((h) => `<li><span class="${h.pts === 3 ? "ok" : h.pts === 0 ? "ng" : ""}">+${h.pts}</span> ${h.text}</li>`)
+      .map((h) => `<li><span class="${h.perfect ? "ok" : h.pts <= 0 ? "ng" : ""}">${h.pts >= 0 ? "+" : ""}${h.pts}</span> ${h.text}</li>`)
       .join("");
     showScreen("end");
   }
 
   function startGame() {
     state.mode = Number(document.querySelector('input[name="mode"]:checked').value);
-    state.grid = $("opt-grid").checked;
-    state.live = document.querySelector('input[name="view"]:checked').value === "live";
     state.qIndex = 0;
     state.score = 0;
     state.history = [];
+    state.streak = 0; state.maxStreak = 0;
+    state.betsWon = 0; state.betsMade = 0;
     showScreen("game");
     nextQuestion();
   }
 
   $("btn-start").addEventListener("click", startGame);
   $("btn-judge").addEventListener("click", judge);
+  $("btn-bet").addEventListener("click", () => { state.bet = !state.bet; renderChoices(); });
   $("btn-play").addEventListener("click", () => {
     if (state.answered) revealLive();
     else watchLive();
