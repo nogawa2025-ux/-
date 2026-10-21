@@ -367,16 +367,47 @@
 
   // ゴール板（決勝線の標識）とゴール線
   function drawFinishPost(ctx, x) {
-    if (x < -40 || x > W + 40) return;
+    if (x < -60 || x > W + 60) return;
     ctx.save();
-    ctx.fillStyle = "rgba(255,255,255,0.55)";
-    ctx.fillRect(x - 1, 101, 2, H - 101);
     ctx.fillStyle = "#f8fafc";
-    ctx.fillRect(x - 3, 8, 6, 92);
-    ctx.beginPath(); ctx.arc(x, 22, 15, 0, Math.PI * 2);
+    ctx.fillRect(x - 4, 30, 8, 72);
+    ctx.beginPath(); ctx.arc(x, 30, 24, 0, Math.PI * 2);
     ctx.fillStyle = "#f8fafc"; ctx.fill();
-    ctx.lineWidth = 5; ctx.strokeStyle = "#dc2626"; ctx.stroke();
-    ctx.fillStyle = "#dc2626"; ctx.fillRect(x - 1.5, 9, 3, 26);
+    ctx.lineWidth = 7; ctx.strokeStyle = "#dc2626"; ctx.stroke();
+    ctx.fillStyle = "#dc2626"; ctx.fillRect(x - 2.5, 8, 5, 44);
+    ctx.restore();
+  }
+
+  // リアルスピードのゴール線。見やすいよう馬の上に重ねて描き、ゴールの瞬間は黄色く光らせる
+  function drawLiveGoalLine(ctx, x, glow) {
+    if (x < -20 || x > W + 20) return;
+    ctx.save();
+    if (glow) {
+      ctx.fillStyle = "rgba(250,204,21,0.55)";
+      ctx.fillRect(x - 7, 0, 14, H);
+    }
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(x - 3, 101, 6, H - 101);
+    ctx.fillStyle = "#dc2626";
+    ctx.fillRect(x - 1.5, 101, 3, H - 101);
+    ctx.restore();
+  }
+
+  // ゴール線がまだ画面の外にあるときは、右端に残りの距離を出す
+  function drawGoalIndicator(ctx, q, t, view) {
+    const meters = (0 - liveCam(q, t)) - (view.x + view.w - LIVE.anchor) / PX_PER_M;
+    if (meters <= 0) return;
+    const text = `ゴールまで ${Math.ceil(meters)}m ▶`;
+    ctx.save();
+    ctx.font = "bold 20px sans-serif";
+    const tw = ctx.measureText(text).width;
+    const x = view.x + view.w - tw - 20;
+    ctx.fillStyle = "rgba(220,38,38,0.9)";
+    ctx.fillRect(x - 8, 8, tw + 16, 32);
+    ctx.fillStyle = "#fff";
+    ctx.textAlign = "left";
+    ctx.fillText(text, x, 31);
     ctx.restore();
   }
 
@@ -522,13 +553,17 @@
 
   function drawFinishLine(ctx, x, label = true) {
     ctx.save();
-    ctx.fillStyle = "rgba(220,38,38,0.9)";
-    ctx.fillRect(x - 1, 0, 2, H);
+    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.fillRect(x - 2.5, 0, 5, H);
+    ctx.fillStyle = "#dc2626";
+    ctx.fillRect(x - 1.5, 0, 3, H);
     if (!label) { ctx.restore(); return; }
-    ctx.fillStyle = "#fff";
-    ctx.font = "bold 16px sans-serif";
+    ctx.font = "bold 18px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("ゴール", x, 20);
+    ctx.fillStyle = "#dc2626";
+    ctx.fillRect(x - 34, 4, 68, 26);
+    ctx.fillStyle = "#fff";
+    ctx.fillText("ゴール", x, 24);
     ctx.restore();
   }
 
@@ -641,10 +676,9 @@
     drawFinishPost(cctx, snap.finishX);
     const byDepth = snap.horses.slice().sort((a, b) => a.y - b.y);
     for (const h of byDepth) drawHorse(cctx, h);
-    if (done) {
-      drawFinishLine(cctx, snap.finishX, false); // ゴール板と重なるのでラベルなし
-      drawAnswerOverlay(cctx, snap, state.view);
-    }
+    drawLiveGoalLine(cctx, snap.finishX, !done && Math.abs(t - LIVE.tStar) < 0.05);
+    if (done) drawAnswerOverlay(cctx, snap, state.view);
+    else drawGoalIndicator(cctx, q, t, state.view);
     const msg = state.livePhase === "ready" ? "▶ 再生すると実際の速さで映像が流れます（約2秒）"
       : state.livePhase === "watched" ? "1着と着差を判定してください" : null;
     if (msg) {
@@ -717,7 +751,8 @@
   function updateView() {
     const narrow = canvas.parentElement.clientWidth < 640;
     const w = narrow ? 560 : W;
-    const x = Math.min(W - w, Math.max(0, Math.round(state.q.finishX - w * 0.78)));
+    const ratio = state.q.live ? 0.62 : 0.78; // リアルスピードはゴール線が早めに見えるよう中央寄りにする
+    const x = Math.min(W - w, Math.max(0, Math.round(state.q.finishX - w * ratio)));
     state.view = { x, w };
     if (canvas.width !== w) canvas.width = w;
   }
