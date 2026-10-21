@@ -72,6 +72,11 @@
   .race.g1 { background: #7c2d12; color: #fde68a; }
   .final-banner { margin-bottom: 8px; padding: 8px 12px; border-radius: 8px; background: #7c2d12; color: #fde68a; font-weight: bold; text-align: center; }
   .streak { color: #fb923c; margin-left: 8px; }
+  .race.ex { background: #312e81; color: #c7d2fe; }
+  .final-banner.ex { background: #312e81; color: #c7d2fe; }
+  .panel.ex { background: #1e1b4b; border-color: #6366f1; }
+  .panel.locked { opacity: 0.75; }
+  button.ex { background: #6366f1; border-color: #6366f1; color: #fff; font-weight: bold; padding: 10px 24px; }
 </style>
 </head>
 <body>
@@ -105,11 +110,22 @@
       <p class="muted" id="best"></p>
       <button class="primary" id="btn-start">スタート</button>
     </div>
+    <div class="panel ex" id="extra-panel">
+      <h2>⚡ エクストラモード</h2>
+      <div id="extra-locked">
+        <p class="muted" style="margin:0;">🔒 10レースで<b>満点（60点）</b>を取ると開放されます（初級・上級どちらでも可）。</p>
+      </div>
+      <div id="extra-open" class="hidden">
+        <p class="muted" style="margin-top:0;">ナイター開催のG1級だけが続く勝ち抜き戦。必ず3頭立てで、ハナ・アタマ・同着ばかり。映像は<b>1回しか見られず</b>、<b>完璧以外は即終了</b>。何連続で当て続けられるか挑戦しよう。</p>
+        <p class="muted" id="extra-best"></p>
+        <button class="ex" id="btn-extra">エクストラに挑戦</button>
+      </div>
+    </div>
   </section>
 
   <!-- ゲーム画面 -->
   <section id="screen-game" class="hidden">
-    <div class="final-banner hidden" id="final-banner">🏆 最終レース 日本ダービー　得点2倍！</div>
+    <div class="final-banner hidden" id="final-banner"></div>
     <div class="status"><span id="q-no"></span><span id="q-score"></span></div>
     <div class="canvas-box"><canvas id="photo" width="1000" height="520"></canvas></div>
     <div class="row" id="play-row" style="margin-top:8px;">
@@ -138,9 +154,13 @@
       <div style="font-size:1.2rem;font-weight:bold;" id="end-title"></div>
       <div class="muted" id="end-best"></div>
       <div class="muted" id="end-stats"></div>
+      <div class="hidden" id="end-unlock" style="margin-top:12px;">
+        <div style="font-size:1.1rem;font-weight:bold;color:#c7d2fe;">⚡ 満点達成！エクストラモードが開放されました</div>
+        <button class="ex" id="btn-extra-end" style="margin-top:8px;">エクストラに挑戦</button>
+      </div>
     </div>
     <div class="panel">
-      <h2>各問の結果</h2>
+      <h2>各レースの結果</h2>
       <ol class="history" id="history"></ol>
     </div>
     <div class="row">
@@ -199,6 +219,16 @@
     { name: "日本ダービー", cats: { hana: 3, atama: 1.5, dead: 1 },                  close: [0.4, 1.8], grade: true, final: true },
   ];
   const MAX_COMBO = 3;
+  // 満点 = 各レースで完璧＋連続ボーナス（最終レースは2倍）
+  const MAX_SCORE = RACES.reduce((sum, race, i) => sum + (3 + Math.min(i, MAX_COMBO)) * (race.final ? 2 : 1), 0);
+
+  // エクストラモード：ナイターのG1級が続き、完璧以外は即終了。映像は1回だけ
+  const EXTRA_RACE = {
+    name: "エクストラ", cats: { hana: 3, atama: 1.5, dead: 1, kubi: 0.4 },
+    close: [0.2, 2.0], grade: true, night: true,
+  };
+  const EXTRA_HORSES = 3;
+  const EXTRA_VIEWS = 1;
 
   // 枠色（帽子の色）: 1白 2黒 3赤 4青 5黄 6緑 7橙 8桃
   const WAKU_COLORS = ["#f8fafc", "#111827", "#dc2626", "#2563eb", "#facc15", "#16a34a", "#f97316", "#f472b6"];
@@ -320,11 +350,12 @@
     const camPx = liveCam(q, t) * PX_PER_M;
     const smear = Math.min(40, q.vCam * PX_PER_M / 60 / 2); // 1フレームで流れる量のぶれ
 
+    const night = q.race.night;
     // 空
-    ctx.fillStyle = "#cbd5e1"; ctx.fillRect(0, 0, W, 34);
+    ctx.fillStyle = night ? "#0b1026" : "#cbd5e1"; ctx.fillRect(0, 0, W, 34);
     // スタンドの観客（遠いのでゆっくり流れる）
-    const crowd = Array.from({ length: 40 }, () => `hsl(${Math.floor(r() * 360)},${20 + Math.floor(r() * 30)}%,${35 + Math.floor(r() * 30)}%)`);
-    ctx.fillStyle = "#475569"; ctx.fillRect(0, 34, W, 56);
+    const crowd = Array.from({ length: 40 }, () => `hsl(${Math.floor(r() * 360)},${20 + Math.floor(r() * 30)}%,${(night ? 20 : 35) + Math.floor(r() * 30)}%)`);
+    ctx.fillStyle = night ? "#1e1b3a" : "#475569"; ctx.fillRect(0, 34, W, 56);
     const cw = 22, off = (camPx * 0.35) % (cw * crowd.length);
     ctx.globalAlpha = 0.35;
     for (let s = 0; s < 3; s++) {
@@ -335,6 +366,16 @@
       }
     }
     ctx.globalAlpha = 1;
+    if (night) {
+      // 照明とカメラのフラッシュ
+      const glow = ctx.createRadialGradient(W / 2, 0, 10, W / 2, 0, 520);
+      glow.addColorStop(0, "rgba(255,248,220,0.22)"); glow.addColorStop(1, "rgba(255,248,220,0)");
+      ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "rgba(255,255,255,0.9)";
+      for (let i = 0; i < 6; i++) {
+        if (Math.random() < 0.5) ctx.fillRect(Math.random() * W, 38 + Math.random() * 46, 3, 3);
+      }
+    }
     // 外ラチと支柱（2mおき）
     ctx.fillStyle = "#e5e7eb"; ctx.fillRect(0, 88, W, 8);
     ctx.fillStyle = "#6b7280"; ctx.fillRect(0, 96, W, 5);
@@ -345,7 +386,8 @@
     }
     // 芝（刈り目の縞が5mおき）
     const g = ctx.createLinearGradient(0, 101, 0, H);
-    g.addColorStop(0, "#3f7d2c"); g.addColorStop(1, "#4f9a36");
+    if (night) { g.addColorStop(0, "#2a5a20"); g.addColorStop(1, "#3c7a2c"); }
+    else { g.addColorStop(0, "#3f7d2c"); g.addColorStop(1, "#4f9a36"); }
     ctx.fillStyle = g; ctx.fillRect(0, 101, W, H - 101);
     const stripe = 5 * PX_PER_M;
     ctx.fillStyle = "rgba(255,255,255,0.07)";
@@ -566,6 +608,7 @@
     choiceWinner: null, choiceMargin: null,
     answered: false, history: [],
     streak: 0, maxStreak: 0,
+    extra: false, extraOver: false,
     loupe: null, // {x, y, touch}（画像全体の座標）
     view: { x: 0, w: W }, // 表示する切り出し範囲。スマホではゴール付近だけを大きく見せる
     // 映像: ready（未再生）→ playing → watched（判定待ち）→ reveal（スロー）→ done（答え表示）
@@ -577,6 +620,17 @@
   function loadBest(mode) {
     try { return Number(localStorage.getItem(bestKey(mode))) || 0; } catch (e) { return 0; }
   }
+  function loadFlag(key) {
+    try { return Number(localStorage.getItem(key)) || 0; } catch (e) { return 0; }
+  }
+  function saveFlag(key, v) {
+    try { localStorage.setItem(key, String(v)); } catch (e) { /* 保存できなくても遊べる */ }
+  }
+  const EXTRA_UNLOCK_KEY = "photoFinishExtraUnlocked";
+  const EXTRA_BEST_KEY = "photoFinishExtraBest";
+  const viewsAllowed = () => (state.extra ? EXTRA_VIEWS : LIVE.views);
+  const raceFor = (i) => (state.extra ? { ...EXTRA_RACE, name: `エクストラ 第${i + 1}戦` } : RACES[i]);
+
   function saveBest(v) {
     try { localStorage.setItem(bestKey(), String(v)); } catch (e) { /* 保存できなくても遊べる */ }
   }
@@ -596,7 +650,12 @@
   }
 
   function renderBest() {
-    $("best").textContent = `ベスト：初級 ${loadBest(2)}点 ／ 上級 ${loadBest(3)}点`;
+    $("best").textContent = `ベスト：初級 ${loadBest(2)}点 ／ 上級 ${loadBest(3)}点（満点${MAX_SCORE}点）`;
+    const unlocked = loadFlag(EXTRA_UNLOCK_KEY) === 1;
+    $("extra-panel").classList.toggle("locked", !unlocked);
+    $("extra-locked").classList.toggle("hidden", unlocked);
+    $("extra-open").classList.toggle("hidden", !unlocked);
+    $("extra-best").textContent = `エクストラ最高記録：${loadFlag(EXTRA_BEST_KEY)}連続`;
   }
 
   function composeImage() {
@@ -642,7 +701,7 @@
 
   function watchLive() {
     if (state.livePhase !== "ready" && state.livePhase !== "watched") return;
-    if (state.viewsUsed >= LIVE.views) return;
+    if (state.viewsUsed >= viewsAllowed()) return;
     state.viewsUsed++;
     playLive(0, LIVE.duration, 1, () => {
       state.livePhase = "watched";
@@ -662,7 +721,7 @@
 
   function renderPlayRow() {
     const b = $("btn-play"), info = $("play-info");
-    const left = LIVE.views - state.viewsUsed;
+    const left = viewsAllowed() - state.viewsUsed;
     if (state.answered) {
       b.textContent = "🐢 スローで見直す";
       b.disabled = state.livePhase === "reveal";
@@ -670,7 +729,7 @@
     } else {
       b.textContent = state.viewsUsed === 0 ? "▶ 再生" : "▶ もう一度見る";
       b.disabled = state.livePhase === "playing" || left <= 0;
-      info.textContent = `あと${left}回見られます`;
+      info.textContent = left > 0 ? `あと${left}回見られます` : "もう見られません";
     }
   }
 
@@ -758,15 +817,23 @@
   }
 
   function renderStatus() {
-    const race = RACES[state.qIndex];
-    $("final-banner").classList.toggle("hidden", !race.final);
+    const race = raceFor(state.qIndex);
+    const banner = $("final-banner");
+    banner.classList.toggle("hidden", !race.final && !state.extra);
+    banner.classList.toggle("ex", state.extra);
+    banner.textContent = state.extra ? "⚡ エクストラモード　映像は1回・完璧以外は即終了" : "🏆 最終レース 日本ダービー　得点2倍！";
+    if (state.extra) {
+      $("q-no").innerHTML = `<span class="race ex" style="margin-left:0;">⚡ ${race.name}</span>`;
+      $("q-score").innerHTML = `<span class="streak">${state.streak}連続完璧</span>`;
+      return;
+    }
     $("q-no").innerHTML = `第${state.qIndex + 1}レース / ${QUESTIONS}<span class="race${race.grade ? " g1" : ""}">${race.name}</span>`;
     $("q-score").innerHTML = `得点 ${state.score}` + (state.streak >= 2 ? `<span class="streak">🔥${state.streak}連続完璧</span>` : "");
   }
 
   function nextQuestion() {
     state.animId++; // 再生中の映像を止める
-    state.q = makeQuestion(state.mode, RACES[state.qIndex]);
+    state.q = makeQuestion(state.extra ? EXTRA_HORSES : state.mode, raceFor(state.qIndex));
     state.livePhase = "ready";
     state.liveT = 0;
     state.viewsUsed = 0;
@@ -795,6 +862,7 @@
       base = (winnerOk ? 1 : 0) + (marginOk ? 2 : 0);
     }
     const perfect = base === 3;
+    if (state.extra) { judgeExtra(q, perfect, winnerOk, marginOk); return; }
 
     // 連続ボーナス → 最終レース の順に計算
     state.streak = perfect ? state.streak + 1 : 0;
@@ -805,16 +873,8 @@
     if (combo > 0) steps.push(`連続ボーナス +${combo}点`);
     if (q.race.final) { pts *= 2; steps.push("日本ダービー ×2"); }
     state.score += pts;
-    state.answered = true;
 
-    const cm = Math.round(q.margin * METERS_PER_LENGTH * 100);
-    const truth = q.cat.id === "dead"
-      ? `正解：<b>${q.horses[0].num}番と${q.horses[1].num}番の同着</b>`
-      : `正解：1着 <b>${q.winner}番</b> ／ 着差 <b>${q.cat.label}</b>（${q.margin.toFixed(2)}馬身 ≒ 約${cm}cm）`;
-    const mark = (ok) => ok ? '<span class="ok">○</span>' : '<span class="ng">×</span>';
-    const detail = q.cat.id === "dead"
-      ? `同着 ${mark(marginOk)}`
-      : `1着 ${mark(winnerOk)} ／ 着差 ${mark(marginOk)}`;
+    const { truth, detail } = describeAnswer(q, winnerOk, marginOk);
     const headline = perfect
       ? `<span class="ok">${state.streak >= 2 ? `🔥${state.streak}連続 完璧！` : "完璧！"}</span>`
       : base > 0 ? "おしい！" : '<span class="ng">ハズレ…</span>';
@@ -824,19 +884,51 @@
       `<div class="muted">${steps.join(" → ")} ＝ ${sign}${pts}点</div>`;
     $("result").classList.remove("hidden");
 
+    pushHistory(q, pts, perfect);
+    afterJudge(state.qIndex + 1 >= QUESTIONS);
+  }
+
+  function describeAnswer(q, winnerOk, marginOk) {
+    const cm = Math.round(q.margin * METERS_PER_LENGTH * 100);
+    const truth = q.cat.id === "dead"
+      ? `正解：<b>${q.horses[0].num}番と${q.horses[1].num}番の同着</b>`
+      : `正解：1着 <b>${q.winner}番</b> ／ 着差 <b>${q.cat.label}</b>（${q.margin.toFixed(2)}馬身 ≒ 約${cm}cm）`;
+    const mark = (ok) => ok ? '<span class="ok">○</span>' : '<span class="ng">×</span>';
+    const detail = q.cat.id === "dead"
+      ? `同着 ${mark(marginOk)}`
+      : `1着 ${mark(winnerOk)} ／ 着差 ${mark(marginOk)}`;
+    return { truth, detail };
+  }
+
+  function pushHistory(q, pts, perfect) {
     const chosen = CATS.find((c) => c.id === state.choiceMargin).label;
     const answer = q.cat.id === "dead" ? "同着" : `${q.winner}番・${q.cat.label}`;
     const yours = state.choiceMargin === "dead" ? chosen : `${state.choiceWinner}番・${chosen}`;
-    state.history.push({
-      pts, perfect,
-      text: `${q.race.name}：${answer}（あなた：${yours}）`,
-    });
+    state.history.push({ pts, perfect, text: `${q.race.name}：${answer}（あなた：${yours}）` });
+  }
 
+  function afterJudge(last) {
+    state.answered = true;
     $("btn-judge").classList.add("hidden");
     $("btn-next").classList.remove("hidden");
-    $("btn-next").textContent = state.qIndex + 1 >= QUESTIONS ? "結果を見る" : "次のレースへ";
+    $("btn-next").textContent = last ? "結果を見る" : "次のレースへ";
     revealLive();
     renderChoices(); renderStatus(); renderPlayRow();
+  }
+
+  // エクストラは得点ではなく連続数。完璧以外ならその場で終了
+  function judgeExtra(q, perfect, winnerOk, marginOk) {
+    if (perfect) state.streak++;
+    else state.extraOver = true;
+    state.maxStreak = Math.max(state.maxStreak, state.streak);
+    const { truth, detail } = describeAnswer(q, winnerOk, marginOk);
+    const headline = perfect
+      ? `<span class="ok">完璧！ ${state.streak}連続</span>`
+      : `<span class="ng">終了… 記録 ${state.streak}連続</span>`;
+    $("result").innerHTML = `<div class="big">${headline}</div><div>${detail}</div><div>${truth}</div>`;
+    $("result").classList.remove("hidden");
+    pushHistory(q, perfect ? 1 : 0, perfect);
+    afterJudge(state.extraOver);
   }
 
   // 全問完璧で60点
@@ -848,7 +940,28 @@
     return "🐴 まずはハナ差を見抜く練習から";
   }
 
+  function extraTitle(n) {
+    if (n >= 10) return "👑 伝説の決勝審判";
+    if (n >= 6) return "🏆 名審判の中の名審判";
+    if (n >= 3) return "🥇 ナイターの鬼";
+    if (n >= 1) return "🥈 エクストラ挑戦者";
+    return "🌙 次こそ初勝利を";
+  }
+
+  function finishExtra() {
+    const prev = loadFlag(EXTRA_BEST_KEY);
+    const isBest = state.streak > prev;
+    if (isBest) saveFlag(EXTRA_BEST_KEY, state.streak);
+    $("end-score").textContent = `${state.streak}連続`;
+    $("end-title").textContent = extraTitle(state.streak);
+    $("end-best").textContent = isBest ? "最高記録更新！" : `最高記録: ${Math.max(prev, state.streak)}連続`;
+    $("end-stats").textContent = "⚡ エクストラモード";
+    $("end-unlock").classList.add("hidden");
+  }
+
   function finish() {
+    state.animId++;
+    if (state.extra) { finishExtra(); renderHistory(); showScreen("end"); return; }
     const prev = loadBest(state.mode);
     const isBest = state.score > prev;
     if (isBest) saveBest(state.score);
@@ -857,13 +970,26 @@
     $("end-title").textContent = titleFor(state.score);
     $("end-best").textContent = isBest ? "ベスト更新！" : `ベスト: ${Math.max(prev, state.score)}点`;
     $("end-stats").textContent = `最大${state.maxStreak}連続完璧`;
-    $("history").innerHTML = state.history
-      .map((h) => `<li><span class="${h.perfect ? "ok" : h.pts <= 0 ? "ng" : ""}">${h.pts >= 0 ? "+" : ""}${h.pts}</span> ${h.text}</li>`)
-      .join("");
+    // 満点ならエクストラ開放（すでに開放済みなら案内だけ出す）
+    const perfectRun = state.score >= MAX_SCORE;
+    if (perfectRun) saveFlag(EXTRA_UNLOCK_KEY, 1);
+    $("end-unlock").classList.toggle("hidden", !perfectRun);
+    renderHistory();
     showScreen("end");
   }
 
-  function startGame() {
+  function renderHistory() {
+    $("history").innerHTML = state.history
+      .map((h) => {
+        const mark = state.extra ? (h.perfect ? "○" : "×") : `${h.pts >= 0 ? "+" : ""}${h.pts}`;
+        return `<li><span class="${h.perfect ? "ok" : h.pts <= 0 ? "ng" : ""}">${mark}</span> ${h.text}</li>`;
+      })
+      .join("");
+  }
+
+  function startGame(extra) {
+    state.extra = extra === true;
+    state.extraOver = false;
     state.mode = Number(document.querySelector('input[name="mode"]:checked').value);
     state.qIndex = 0;
     state.score = 0;
@@ -873,7 +999,9 @@
     nextQuestion();
   }
 
-  $("btn-start").addEventListener("click", startGame);
+  $("btn-start").addEventListener("click", () => startGame(false));
+  $("btn-extra").addEventListener("click", () => startGame(true));
+  $("btn-extra-end").addEventListener("click", () => startGame(true));
   $("btn-judge").addEventListener("click", judge);
   $("btn-play").addEventListener("click", () => {
     if (state.answered) revealLive();
@@ -881,10 +1009,10 @@
   });
   $("btn-next").addEventListener("click", () => {
     state.qIndex++;
-    if (state.qIndex >= QUESTIONS) finish();
+    if (state.extra ? state.extraOver : state.qIndex >= QUESTIONS) finish();
     else { nextQuestion(); $("photo").scrollIntoView({ block: "nearest" }); }
   });
-  $("btn-retry").addEventListener("click", startGame);
+  $("btn-retry").addEventListener("click", () => startGame(state.extra));
   $("btn-top").addEventListener("click", () => { renderBest(); showScreen("start"); });
 
   window.addEventListener("resize", () => {
