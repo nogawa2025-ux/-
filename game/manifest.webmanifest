@@ -2,7 +2,7 @@
   "name": "写真判定チャレンジ",
   "short_name": "写真判定",
   "description": "写真判定画像から1着馬と着差を当てるゲーム",
-  "start_url": "./photo-finish.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#022c22",
